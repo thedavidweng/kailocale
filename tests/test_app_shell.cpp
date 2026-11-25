@@ -11,8 +11,10 @@
 
 namespace {
 
+using kailocale::ApplyOutcome;
 using kailocale::AvailableLanguagesResult;
 using kailocale::InputSnapshot;
+using kailocale::LanguageCode;
 using kailocale::LanguagePicker;
 using kailocale::LanguageReadResult;
 using kailocale::LanguageService;
@@ -34,6 +36,9 @@ public:
         {pack_language_code("ja"), pack_language_code("en-US"), pack_language_code("zh-Hans")},
     };
     SystemTheme theme = SystemTheme::Dark;
+    ServiceResult apply_result = ServiceResult::success();
+    bool update_current_on_apply_success = true;
+    std::vector<LanguageCode> apply_calls;
 
     LanguageReadResult read_current_language() override {
         return current_result;
@@ -46,6 +51,14 @@ public:
     SystemTheme read_system_theme() override {
         return theme;
     }
+
+    ServiceResult apply_language(LanguageCode code) override {
+        apply_calls.push_back(code);
+        if (apply_result.ok && update_current_on_apply_success) {
+            current_result = {ServiceResult::success(), code};
+        }
+        return apply_result;
+    }
 };
 
 class FakePlatformServices final : public PlatformServices {
@@ -54,6 +67,8 @@ public:
     std::vector<std::string> events;
     std::vector<ShellView> rendered_status;
     std::vector<PickerView> rendered_picker;
+    const std::vector<LanguageCode>* apply_calls_ptr = nullptr;
+    std::vector<std::size_t> apply_count_at_render;
 
     ServiceResult exit_lock_result = ServiceResult::success();
     ServiceResult display_result = ServiceResult::success();
@@ -126,6 +141,7 @@ public:
 
     void render_picker(const PickerView& view) override {
         rendered_picker.push_back(view);
+        apply_count_at_render.push_back(apply_calls_ptr != nullptr ? apply_calls_ptr->size() : 0u);
     }
 
     std::size_t poll_count = 0;
@@ -357,18 +373,20 @@ void test_navigation_dialog_and_service_error_picker_flow_through_app_shell() {
     InputSnapshot plus;
     plus.plus_held = true;
 
-    fake.frames = {down, idle, a, idle, a, plus};
+    fake.frames = {down, idle, a, idle, a, idle, plus};
 
     kailocale::AppShell shell(fake, lang);
     const ShellOutcome outcome = shell.run();
 
     CHECK(outcome.reason == kailocale::ExitReason::UserPlus);
-    CHECK(fake.rendered_picker.size() == 4);
+    CHECK(fake.rendered_picker.size() == 5);
     CHECK(fake.rendered_picker[0].focused_index == 1u); // en-US
     CHECK(fake.rendered_picker[1].focused_index == 2u); // moved to zh-Hans
     CHECK(fake.rendered_picker[2].screen == PickerScreen::ConfirmDialog);
-    CHECK(fake.rendered_picker[3].screen == PickerScreen::List);
-    CHECK(fake.rendered_picker[3].applied_code == pack_language_code("en-US"));
+    CHECK(fake.rendered_picker[3].screen == PickerScreen::Applying);
+    CHECK(fake.rendered_picker[4].screen == PickerScreen::Result);
+    CHECK(fake.rendered_picker[4].apply_report.outcome == ApplyOutcome::Verified);
+    CHECK(fake.rendered_picker[4].applied_code == pack_language_code("zh-Hans"));
 
     FakePlatformServices err_fake;
     FakeLanguageService err_lang;
@@ -380,6 +398,90 @@ void test_navigation_dialog_and_service_error_picker_flow_through_app_shell() {
     CHECK(err_fake.rendered_picker.size() == 1);
     CHECK(err_fake.rendered_picker[0].screen == PickerScreen::Error);
     CHECK(err_fake.rendered_picker[0].error_code == 0x3133u);
+}
+
+void test_same_session_roundtrip_switch_and_rejected_apply_render_applying_before_ipc() {
+    // 1. Switch en-US -> zh-Hans -> en-US -> clean Plus exit.
+    {
+        FakePlatformServices fake;
+        FakeLanguageService lang;
+        fake.apply_calls_ptr = &lang.apply_calls;
+
+        InputSnapshot down;
+        down.nav_down_held = true;
+        InputSnapshot up;
+        up.nav_up_held = true;
+        InputSnapshot idle;
+        InputSnapshot a;
+        a.a_held = true;
+        InputSnapshot plus;
+        plus.plus_held = true;
+
+        // Initial: en-US (idx 1). Move down -> zh-Hans (idx 2), A -> Confirm, A -> Applying, idle -> Result,
+        // A -> List, up -> en-US (idx 1), A -> Confirm, A -> Applying, idle -> Result, Plus -> Exit.
+        fake.frames = {
+            down, idle,
+            a, idle,
+            a, idle,
+            a, idle,
+            up, idle,
+            a, idle,
+            a, idle,
+            plus,
+        };
+
+        kailocale::AppShell shell(fake, lang);
+        const ShellOutcome outcome = shell.run();
+        CHECK(outcome.reason == kailocale::ExitReason::UserPlus);
+        CHECK(outcome.succeeded());
+        CHECK(lang.apply_calls.size() == 2u);
+        CHECK(lang.apply_calls[0] == pack_language_code("zh-Hans"));
+        CHECK(lang.apply_calls[1] == pack_language_code("en-US"));
+
+        // Verify exact render sequence and that Applying ALWAYS renders before the write runs.
+        CHECK(fake.rendered_picker.size() == 10u);
+        CHECK(fake.rendered_picker[3].screen == PickerScreen::Applying);
+        CHECK(fake.apply_count_at_render[3] == 0u);
+        CHECK(fake.rendered_picker[4].screen == PickerScreen::Result);
+        CHECK(fake.rendered_picker[4].apply_report.outcome == ApplyOutcome::Verified);
+        CHECK(fake.apply_count_at_render[4] == 1u);
+        CHECK(fake.rendered_picker[5].screen == PickerScreen::List);
+        CHECK(fake.rendered_picker[5].applied_code == pack_language_code("zh-Hans"));
+        CHECK(fake.rendered_picker[8].screen == PickerScreen::Applying);
+        CHECK(fake.apply_count_at_render[8] == 1u);
+        CHECK(fake.rendered_picker[9].screen == PickerScreen::Result);
+        CHECK(fake.rendered_picker[9].apply_report.outcome == ApplyOutcome::Verified);
+        CHECK(fake.rendered_picker[9].applied_code == pack_language_code("en-US"));
+        CHECK(fake.apply_count_at_render[9] == 2u);
+    }
+
+    // 2. Rejected write renders Applying then Result(Rejected), keeps original language, and exits cleanly.
+    {
+        FakePlatformServices fake;
+        FakeLanguageService lang;
+        lang.apply_result = ServiceResult::failure(0x8811);
+        fake.apply_calls_ptr = &lang.apply_calls;
+
+        InputSnapshot down;
+        down.nav_down_held = true;
+        InputSnapshot idle;
+        InputSnapshot a;
+        a.a_held = true;
+        InputSnapshot plus;
+        plus.plus_held = true;
+        fake.frames = {down, idle, a, idle, a, idle, plus};
+
+        kailocale::AppShell shell(fake, lang);
+        const ShellOutcome outcome = shell.run();
+        CHECK(outcome.reason == kailocale::ExitReason::UserPlus);
+        CHECK(fake.rendered_picker.size() == 5u);
+        CHECK(fake.rendered_picker[3].screen == PickerScreen::Applying);
+        CHECK(fake.apply_count_at_render[3] == 0u);
+        CHECK(fake.rendered_picker[4].screen == PickerScreen::Result);
+        CHECK(fake.rendered_picker[4].apply_report.outcome == ApplyOutcome::Rejected);
+        CHECK(fake.rendered_picker[4].apply_report.error_code == 0x8811u);
+        CHECK(fake.rendered_picker[4].applied_code == pack_language_code("en-US"));
+    }
 }
 
 } // namespace
@@ -397,6 +499,7 @@ int main() {
         {"applet_exit_request_closes_cleanly", test_applet_exit_request_closes_cleanly},
         {"shared_font_init_failure_still_renders_visible_error_and_exits_on_applet_close", test_shared_font_init_failure_still_renders_visible_error_and_exits_on_applet_close},
         {"navigation_dialog_and_service_error_picker_flow_through_app_shell", test_navigation_dialog_and_service_error_picker_flow_through_app_shell},
+        {"same_session_roundtrip_switch_and_rejected_apply_render_applying_before_ipc", test_same_session_roundtrip_switch_and_rejected_apply_render_applying_before_ipc},
     };
 
     int passed = 0;

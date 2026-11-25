@@ -11,12 +11,13 @@
 
 namespace kailocale {
 
-/// Read-only Switch 2 LanguageService backed strictly by documented libounce set / set:sys queries.
+/// Switch 2 LanguageService backed strictly by documented libounce set / set:sys APIs.
 class Switch2LanguageService final : public LanguageService {
 public:
     LanguageReadResult read_current_language() override;
     AvailableLanguagesResult read_available_languages() override;
     SystemTheme read_system_theme() override;
+    ServiceResult apply_language(LanguageCode code) override;
 };
 
 /// Switch 2 PlatformServices adapter backed by libounce, VI2 linear Framebuffer, FreeType2, and HarfBuzz.

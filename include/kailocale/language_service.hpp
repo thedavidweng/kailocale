@@ -25,7 +25,7 @@ struct AvailableLanguagesResult {
     std::vector<LanguageCode> codes;
 };
 
-/// Narrow read-only boundary isolating libounce set / set:sys queries from host-testable core logic.
+/// Narrow boundary isolating libounce set / set:sys queries and confirmed writes from host-testable core logic.
 class LanguageService {
 public:
     virtual ~LanguageService() = default;
@@ -33,6 +33,7 @@ public:
     virtual LanguageReadResult read_current_language() = 0;
     virtual AvailableLanguagesResult read_available_languages() = 0;
     virtual SystemTheme read_system_theme() = 0;
+    virtual ServiceResult apply_language(LanguageCode code) = 0;
 };
 
 } // namespace kailocale

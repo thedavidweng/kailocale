@@ -69,13 +69,21 @@ section_names = {read_cstr(shstrtab, h[0]) for h in sh_hdrs}
 for required_sec in (".debug_info", ".symtab"):
     assert required_sec in section_names, f"ELF missing {required_sec}"
 
-# Verify no forbidden telemetry/network or settings-write symbols in ELF .strtab
+# Verify no forbidden telemetry/network, Switch 1 conversion, or unrelated settings-write symbols in ELF .strtab
 strtab_data = b""
 for h in sh_hdrs:
     if read_cstr(shstrtab, h[0]) == ".strtab":
         strtab_data = elf[h[4]:h[4] + h[5]]
         break
-for forbidden_sym in (b"socketInitialize", b"curl_easy_", b"setsysSetLanguageCode", b"setMakeLanguage", b"setMakeLanguageCode"):
+for forbidden_sym in (
+    b"socketInitialize",
+    b"curl_easy_",
+    b"setMakeLanguage",
+    b"setMakeLanguageCode",
+    b"setsysSetRegionCode",
+    b"setsysSetSerialNumber",
+    b"setsysSetDeviceNickname",
+):
     assert forbidden_sym not in strtab_data, f"Forbidden symbol present in ELF: {forbidden_sym!r}"
 
 # 2. Parse NRO0 header

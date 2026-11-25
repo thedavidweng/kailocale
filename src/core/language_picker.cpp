@@ -1,13 +1,37 @@
 #include "kailocale/language_picker.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 
 namespace kailocale {
 
+namespace {
+
+LanguageEntry make_display_entry(LanguageCode code, bool system_supported, bool is_active) {
+    LanguageMetadata meta = describe_language(code);
+    if (meta.tag.empty()) {
+        char buf[24] = {};
+        std::snprintf(buf, sizeof(buf), "0x%016llX", static_cast<unsigned long long>(code));
+        meta.tag = buf;
+        meta.native_name = buf;
+    }
+    return LanguageEntry{
+        code,
+        meta.tag,
+        meta.native_name,
+        meta.known,
+        system_supported,
+        is_active,
+    };
+}
+
+} // namespace
+
 LanguagePicker::LanguagePicker(LanguageService& service,
                                std::uint32_t viewport_width,
-                               std::uint32_t viewport_height) {
+                               std::uint32_t viewport_height)
+    : service_(service) {
     view_.theme = service.read_system_theme();
     view_.palette = theme_for_system(view_.theme);
 
@@ -94,10 +118,13 @@ void LanguagePicker::move_focus(int delta) {
 }
 
 bool LanguagePicker::open_dialog_for_focused() {
-    if (view_.entries.empty()) {
+    if (view_.entries.empty() || view_.focused_index >= view_.entries.size()) {
         return false;
     }
     const LanguageEntry& focused = view_.entries[view_.focused_index];
+    if (!focused.system_supported || focused.code == 0 || format_language_tag(focused.code).empty()) {
+        return false;
+    }
     if (focused.code == view_.applied_code) {
         const bool changed =
             (view_.banner_kind != BannerKind::Info || view_.banner_text != view_.strings.already_active_notice);
@@ -110,12 +137,111 @@ bool LanguagePicker::open_dialog_for_focused() {
     return true;
 }
 
-void LanguagePicker::confirm_readonly_preview() {
-    view_.focused_index = view_.dialog_target_index;
+bool LanguagePicker::begin_apply_for_dialog_target() {
+    if (view_.dialog_target_index >= view_.entries.size()) {
+        cancel_dialog();
+        return false;
+    }
+    const LanguageEntry& target = view_.entries[view_.dialog_target_index];
+    if (!target.system_supported || target.code == 0 ||
+        format_language_tag(target.code).empty() || target.code == view_.applied_code) {
+        cancel_dialog();
+        return false;
+    }
+    view_.apply_report = ApplyReport{};
+    view_.apply_report.target_entry = target;
+    view_.screen = PickerScreen::Applying;
+    return true;
+}
+
+void LanguagePicker::apply_active_language_state(LanguageCode code) {
+    view_.applied_code = code;
+    bool in_supported = false;
+    for (auto& entry : view_.entries) {
+        entry.is_active = (entry.code == code);
+        if (entry.is_active) {
+            in_supported = true;
+        }
+    }
+    view_.active_missing_from_supported = !in_supported;
+
+    view_.active_entry = make_display_entry(code, in_supported, true);
+
+    const UiLanguage ui_lang = ui_language_from_code(code);
+    view_.strings = localized_strings(ui_lang);
+
+    if (view_.active_missing_from_supported) {
+        view_.banner_kind = BannerKind::Warning;
+        view_.banner_text = view_.strings.unsupported_active_warning;
+    } else {
+        view_.banner_kind = BannerKind::None;
+        view_.banner_text.clear();
+    }
+}
+
+void LanguagePicker::execute_pending_apply() {
+    const LanguageEntry target = view_.apply_report.target_entry;
+    if (!target.system_supported || target.code == 0 ||
+        format_language_tag(target.code).empty() || target.code == view_.applied_code) {
+        cancel_dialog();
+        return;
+    }
+
+    const ServiceResult write_res = service_.apply_language(target.code);
+    if (!write_res.ok) {
+        view_.apply_report.outcome = ApplyOutcome::Rejected;
+        view_.apply_report.error_code = write_res.code;
+        view_.apply_report.actual_code = view_.applied_code;
+        view_.apply_report.actual_entry = view_.active_entry;
+        view_.screen = PickerScreen::Result;
+        return;
+    }
+
+    const LanguageReadResult readback = service_.read_current_language();
+    if (!readback.status.ok) {
+        view_.apply_report.outcome = ApplyOutcome::ReadbackFailed;
+        view_.apply_report.error_code = readback.status.code;
+        view_.apply_report.actual_code = 0;
+        view_.apply_report.actual_entry = LanguageEntry{};
+        view_.screen = PickerScreen::Result;
+        return;
+    }
+
+    if (readback.code == target.code) {
+        apply_active_language_state(readback.code);
+        view_.apply_report.outcome = ApplyOutcome::Verified;
+        view_.apply_report.actual_code = readback.code;
+        view_.apply_report.actual_entry = view_.active_entry;
+        view_.apply_report.error_code = 0;
+        view_.screen = PickerScreen::Result;
+        refresh_layout();
+        return;
+    }
+
+    // ReadbackMismatch: update applied state if readback.code != 0, and always report expected vs actual.
+    view_.apply_report.outcome = ApplyOutcome::ReadbackMismatch;
+    view_.apply_report.actual_code = readback.code;
+    if (readback.code != 0) {
+        apply_active_language_state(readback.code);
+        view_.apply_report.actual_entry = view_.active_entry;
+    } else {
+        view_.apply_report.actual_entry = make_display_entry(0ULL, false, false);
+    }
+    view_.apply_report.error_code = 0;
+    view_.screen = PickerScreen::Result;
+    refresh_layout();
+}
+
+void LanguagePicker::dismiss_result(const PickerInput& input) {
+    if (!view_.entries.empty() && view_.dialog_target_index < view_.entries.size()) {
+        view_.focused_index = view_.dialog_target_index;
+    }
     view_.screen = PickerScreen::List;
-    view_.banner_kind = BannerKind::Info;
-    view_.banner_text = view_.strings.preview_confirmed_notice;
     ensure_focused_visible();
+    latch_held_buttons(input);
+    touch_in_progress_ = false;
+    touch_is_tap_ = false;
+    touch_suppressed_ = input.touch.active;
 }
 
 void LanguagePicker::cancel_dialog() {
@@ -158,19 +284,6 @@ PickerStepResult LanguagePicker::step(const PickerInput& input) {
         out.dirty = true;
     }
 
-    if (input.boundary_reset) {
-        latch_held_buttons(input);
-        if (touch_in_progress_ || input.touch.active) {
-            touch_in_progress_ = false;
-            touch_is_tap_ = false;
-            touch_suppressed_ = input.touch.active;
-        }
-        prev_a_held_ = input.a_held;
-        prev_b_held_ = input.b_held;
-        prev_plus_held_ = input.plus_held;
-        return out;
-    }
-
     if (!input.a_held) {
         latch_a_ = false;
     }
@@ -182,6 +295,32 @@ PickerStepResult LanguagePicker::step(const PickerInput& input) {
     }
     if (!input.nav_up_held && !input.nav_down_held) {
         latch_nav_ = false;
+    }
+
+    if (view_.screen == PickerScreen::Applying) {
+        prev_a_held_ = input.a_held;
+        prev_b_held_ = input.b_held;
+        prev_plus_held_ = input.plus_held;
+        latch_held_buttons(input);
+        touch_in_progress_ = false;
+        touch_is_tap_ = false;
+        touch_suppressed_ = input.touch.active;
+        execute_pending_apply();
+        out.dirty = true;
+        return out;
+    }
+
+    if (input.boundary_reset) {
+        latch_held_buttons(input);
+        if (touch_in_progress_ || input.touch.active) {
+            touch_in_progress_ = false;
+            touch_is_tap_ = false;
+            touch_suppressed_ = input.touch.active;
+        }
+        prev_a_held_ = input.a_held;
+        prev_b_held_ = input.b_held;
+        prev_plus_held_ = input.plus_held;
+        return out;
     }
 
     const bool a_down = input.a_held && !prev_a_held_ && !latch_a_;
@@ -197,34 +336,12 @@ PickerStepResult LanguagePicker::step(const PickerInput& input) {
         return out;
     }
 
-    if (view_.screen == PickerScreen::Error) {
-        // Allow touch Exit button on Error screen too.
-        if (!input.touch.active) {
-            touch_suppressed_ = false;
-            if (touch_in_progress_) {
-                touch_in_progress_ = false;
-                if (touch_is_tap_ && view_.layout.exit_button.contains(touch_start_x_, touch_start_y_)) {
-                    out.exit_requested = true;
-                }
-            }
-        } else if (!touch_suppressed_) {
-            if (!touch_in_progress_) {
-                touch_in_progress_ = true;
-                touch_is_tap_ = true;
-                touch_start_x_ = input.touch.x;
-                touch_start_y_ = input.touch.y;
-                touch_last_x_ = input.touch.x;
-                touch_last_y_ = input.touch.y;
-            } else {
-                touch_last_x_ = input.touch.x;
-                touch_last_y_ = input.touch.y;
-                if (std::abs(touch_last_x_ - touch_start_x_) > view_.layout.tap_slop ||
-                    std::abs(touch_last_y_ - touch_start_y_) > view_.layout.tap_slop) {
-                    touch_is_tap_ = false;
-                }
-            }
+    if (view_.screen == PickerScreen::Result) {
+        if (a_down || b_down) {
+            dismiss_result(input);
+            out.dirty = true;
+            return out;
         }
-        return out;
     }
 
     // Controlled navigation repeat strictly for vertical movement when list is active.
@@ -263,8 +380,11 @@ PickerStepResult LanguagePicker::step(const PickerInput& input) {
     // Controller face buttons: one press cannot both open and confirm a dialog.
     if (view_.screen == PickerScreen::ConfirmDialog) {
         if (a_down) {
-            confirm_readonly_preview();
+            begin_apply_for_dialog_target();
             latch_held_buttons(input);
+            touch_in_progress_ = false;
+            touch_is_tap_ = false;
+            touch_suppressed_ = input.touch.active;
             out.dirty = true;
             return out;
         }
@@ -293,13 +413,21 @@ PickerStepResult LanguagePicker::step(const PickerInput& input) {
                 const int tap_x = touch_start_x_;
                 const int tap_y = touch_start_y_;
                 if (view_.layout.exit_button.contains(tap_x, tap_y) &&
-                    view_.screen == PickerScreen::List) {
+                    (view_.screen == PickerScreen::List ||
+                     view_.screen == PickerScreen::Result ||
+                     view_.screen == PickerScreen::Error)) {
                     out.exit_requested = true;
                     return out;
                 }
-                if (view_.screen == PickerScreen::ConfirmDialog) {
+                if (view_.screen == PickerScreen::Result) {
+                    if (view_.layout.result_continue_button.contains(tap_x, tap_y)) {
+                        dismiss_result(input);
+                        out.dirty = true;
+                    }
+                } else if (view_.screen == PickerScreen::ConfirmDialog) {
                     if (view_.layout.dialog_confirm_button.contains(tap_x, tap_y)) {
-                        confirm_readonly_preview();
+                        begin_apply_for_dialog_target();
+                        latch_held_buttons(input);
                         out.dirty = true;
                     } else if (view_.layout.dialog_cancel_button.contains(tap_x, tap_y) ||
                                !view_.layout.dialog_box.contains(tap_x, tap_y)) {

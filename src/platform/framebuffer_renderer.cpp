@@ -513,9 +513,9 @@ void FramebufferRenderer::render_picker_view(std::uint8_t* buffer,
     draw_text(buffer, stride, margin_x, sc(58), title_px, title, ScriptPreference::Default, pal.text_primary);
     draw_text(buffer, stride, margin_x, sc(98), sub_px, str.subtitle, ui_pref, pal.text_secondary);
 
-    // Read-only badge next to subtitle
+    // Mode pill next to subtitle
     const int sub_w = measure_text_width(str.subtitle, sub_px, ui_pref);
-    const int ro_w = measure_text_width(str.readonly_pill, small_px, ui_pref) + sc(24);
+    const int ro_w = measure_text_width(str.mode_pill, small_px, ui_pref) + sc(24);
     const Rect ro_rect{margin_x + sub_w + sc(20), sc(74), ro_w, sc(32)};
     if (ro_rect.x + ro_rect.w < static_cast<int>(width_) / 2) {
         fill_rect(buffer, stride, width_, height_, ro_rect, pal.info_bg);
@@ -525,7 +525,7 @@ void FramebufferRenderer::render_picker_view(std::uint8_t* buffer,
                   ro_rect.x + sc(12),
                   ro_rect.y + sc(23),
                   small_px,
-                  str.readonly_pill,
+                  str.mode_pill,
                   ui_pref,
                   pal.info_text);
     }
@@ -746,11 +746,18 @@ void FramebufferRenderer::render_picker_view(std::uint8_t* buffer,
     } else if (view.screen == PickerScreen::ConfirmDialog) {
         const std::string hints = str.hint_confirm + "     " + str.hint_cancel + "     " + str.hint_exit;
         draw_text(buffer, stride, margin_x, hint_y, sub_px, hints, ui_pref, pal.text_secondary);
+    } else if (view.screen == PickerScreen::Applying) {
+        draw_text(buffer, stride, margin_x, hint_y, sub_px, str.applying_title, ui_pref, pal.text_secondary);
+    } else if (view.screen == PickerScreen::Result) {
+        const std::string hints = str.hint_continue + "     " + str.hint_exit;
+        draw_text(buffer, stride, margin_x, hint_y, sub_px, hints, ui_pref, pal.text_secondary);
     } else {
         draw_text(buffer, stride, margin_x, hint_y, sub_px, str.hint_exit, ui_pref, pal.text_secondary);
     }
 
-    if (view.screen != PickerScreen::ConfirmDialog) {
+    if (view.screen == PickerScreen::List ||
+        view.screen == PickerScreen::Result ||
+        view.screen == PickerScreen::Error) {
         fill_rect(buffer, stride, width_, height_, lay.exit_button, pal.button_secondary_bg);
         draw_rect_outline(buffer, stride, width_, height_, lay.exit_button, sc(1), pal.divider);
         const int ew = measure_text_width(str.hint_exit, sub_px, ui_pref);
@@ -764,6 +771,47 @@ void FramebufferRenderer::render_picker_view(std::uint8_t* buffer,
                   pal.text_primary,
                   lay.exit_button.w - sc(24));
     }
+
+    const auto draw_labeled_language = [&](int x,
+                                           int y,
+                                           int max_w,
+                                           const std::string& label,
+                                           RgbaColor label_color,
+                                           const LanguageEntry& entry) {
+        const std::string prefix = label + ":  ";
+        const int lbl_w = measure_text_width(prefix, sub_px, ui_pref);
+        const std::string val =
+            (entry.native_name == entry.tag) ? entry.tag : (entry.native_name + "  [" + entry.tag + "]");
+        draw_text(buffer, stride, x, y, sub_px, prefix, ui_pref, label_color);
+        draw_text(buffer,
+                  stride,
+                  x + lbl_w,
+                  y,
+                  body_px,
+                  val,
+                  script_preference_for_tag(entry.tag),
+                  pal.text_primary,
+                  max_w - lbl_w);
+    };
+
+    const auto draw_notice_box = [&](const Rect& box,
+                                     RgbaColor box_bg,
+                                     RgbaColor box_border,
+                                     RgbaColor text_color,
+                                     const std::string& msg,
+                                     int font_px) {
+        fill_rect(buffer, stride, width_, height_, box, box_bg);
+        draw_rect_outline(buffer, stride, width_, height_, box, sc(1), box_border);
+        draw_text(buffer,
+                  stride,
+                  box.x + sc(18),
+                  box.y + (box.h + font_px) / 2 - sc(4),
+                  font_px,
+                  msg,
+                  ui_pref,
+                  text_color,
+                  box.w - sc(36));
+    };
 
     // 8. Confirmation Dialog Overlay
     if (view.screen == PickerScreen::ConfirmDialog && view.dialog_target_index < view.entries.size()) {
@@ -779,49 +827,12 @@ void FramebufferRenderer::render_picker_view(std::uint8_t* buffer,
         draw_text(buffer, stride, dx, dy, sc(34), str.confirm_title, ui_pref, pal.text_primary, max_dw);
         dy += sc(60);
 
-        // Current language row
-        const std::string cur_lbl = str.confirm_current_label + ":  ";
-        const int cur_lbl_w = measure_text_width(cur_lbl, sub_px, ui_pref);
-        draw_text(buffer, stride, dx, dy, sub_px, cur_lbl, ui_pref, pal.text_secondary);
-        draw_text(buffer,
-                  stride,
-                  dx + cur_lbl_w,
-                  dy,
-                  body_px,
-                  view.active_entry.native_name + "  [" + view.active_entry.tag + "]",
-                  script_preference_for_tag(view.active_entry.tag),
-                  pal.text_primary,
-                  max_dw - cur_lbl_w);
+        draw_labeled_language(dx, dy, max_dw, str.confirm_current_label, pal.text_secondary, view.active_entry);
         dy += sc(52);
-
-        // Target language row
-        const std::string tgt_lbl = str.confirm_target_label + ":  ";
-        const int tgt_lbl_w = measure_text_width(tgt_lbl, sub_px, ui_pref);
-        draw_text(buffer, stride, dx, dy, sub_px, tgt_lbl, ui_pref, pal.accent);
-        draw_text(buffer,
-                  stride,
-                  dx + tgt_lbl_w,
-                  dy,
-                  body_px,
-                  target.native_name + "  [" + target.tag + "]",
-                  script_preference_for_tag(target.tag),
-                  pal.text_primary,
-                  max_dw - tgt_lbl_w);
+        draw_labeled_language(dx, dy, max_dw, str.confirm_target_label, pal.accent, target);
         dy += sc(48);
 
-        // Read-only notice box inside dialog
-        const Rect note_box{dx, dy, max_dw, sc(54)};
-        fill_rect(buffer, stride, width_, height_, note_box, pal.info_bg);
-        draw_rect_outline(buffer, stride, width_, height_, note_box, sc(1), pal.info_border);
-        draw_text(buffer,
-                  stride,
-                  note_box.x + sc(18),
-                  note_box.y + sc(35),
-                  small_px,
-                  str.readonly_notice,
-                  ui_pref,
-                  pal.info_text,
-                  note_box.w - sc(36));
+        draw_notice_box(Rect{dx, dy, max_dw, sc(54)}, pal.info_bg, pal.info_border, pal.info_text, str.confirm_notice, small_px);
 
         // Cancel & Confirm buttons
         fill_rect(buffer, stride, width_, height_, lay.dialog_cancel_button, pal.button_secondary_bg);
@@ -848,6 +859,128 @@ void FramebufferRenderer::render_picker_view(std::uint8_t* buffer,
                   ui_pref,
                   pal.button_primary_text,
                   lay.dialog_confirm_button.w - sc(24));
+    } else if (view.screen == PickerScreen::Applying) {
+        // 9. In-progress Applying Overlay
+        fill_rect(buffer, stride, width_, height_, 0, 0, static_cast<int>(width_), static_cast<int>(height_), pal.modal_scrim);
+        fill_rect(buffer, stride, width_, height_, lay.result_box, pal.dialog_bg);
+        draw_rect_outline(buffer, stride, width_, height_, lay.result_box, border_px, pal.accent);
+
+        const int dx = lay.result_box.x + sc(40);
+        const int max_dw = lay.result_box.w - sc(80);
+        int dy = lay.result_box.y + sc(78);
+
+        draw_text(buffer, stride, dx, dy, sc(34), str.applying_title, ui_pref, pal.text_primary, max_dw);
+        dy += sc(66);
+        draw_labeled_language(dx, dy, max_dw, str.confirm_target_label, pal.accent, view.apply_report.target_entry);
+        dy += sc(66);
+        draw_notice_box(Rect{dx, dy, max_dw, sc(72)}, pal.info_bg, pal.info_border, pal.info_text, str.applying_detail, sub_px);
+    } else if (view.screen == PickerScreen::Result) {
+        // 10. Apply Result & Verification Outcome Overlay
+        const ApplyReport& rep = view.apply_report;
+        RgbaColor box_border = pal.accent;
+        const std::string* title_str = &str.result_verified_title;
+        if (rep.outcome == ApplyOutcome::Verified) {
+            box_border = pal.applied_badge_bg;
+            title_str = &str.result_verified_title;
+        } else if (rep.outcome == ApplyOutcome::ReadbackMismatch) {
+            box_border = pal.warning_border;
+            title_str = &str.result_mismatch_title;
+        } else if (rep.outcome == ApplyOutcome::ReadbackFailed) {
+            box_border = pal.error_border;
+            title_str = &str.result_readback_failed_title;
+        } else {
+            box_border = pal.error_border;
+            title_str = &str.result_rejected_title;
+        }
+
+        fill_rect(buffer, stride, width_, height_, 0, 0, static_cast<int>(width_), static_cast<int>(height_), pal.modal_scrim);
+        fill_rect(buffer, stride, width_, height_, lay.result_box, pal.dialog_bg);
+        draw_rect_outline(buffer, stride, width_, height_, lay.result_box, border_px, box_border);
+        fill_rect(buffer, stride, width_, height_, lay.result_box.x, lay.result_box.y, lay.result_box.w, sc(8), box_border);
+
+        const int dx = lay.result_box.x + sc(40);
+        const int max_dw = lay.result_box.w - sc(80);
+        int dy = lay.result_box.y + sc(64);
+
+        draw_text(buffer, stride, dx, dy, sc(34), *title_str, ui_pref, pal.text_primary, max_dw);
+        dy += sc(56);
+
+        if (rep.outcome == ApplyOutcome::Verified) {
+            draw_labeled_language(dx, dy, max_dw, str.confirm_target_label, pal.applied_badge_bg, rep.target_entry);
+            dy += sc(48);
+
+            const Rect note_box{dx, dy, max_dw, sc(108)};
+            fill_rect(buffer, stride, width_, height_, note_box, pal.info_bg);
+            draw_rect_outline(buffer, stride, width_, height_, note_box, sc(1), pal.info_border);
+            draw_text(buffer,
+                      stride,
+                      note_box.x + sc(18),
+                      note_box.y + sc(40),
+                      small_px,
+                      str.result_reopen_apps_note,
+                      ui_pref,
+                      pal.info_text,
+                      note_box.w - sc(36));
+            draw_text(buffer,
+                      stride,
+                      note_box.x + sc(18),
+                      note_box.y + sc(80),
+                      small_px,
+                      str.result_reboot_note,
+                      ui_pref,
+                      pal.info_text,
+                      note_box.w - sc(36));
+        } else if (rep.outcome == ApplyOutcome::ReadbackMismatch) {
+            draw_labeled_language(dx, dy, max_dw, str.result_expected_label, pal.text_secondary, rep.target_entry);
+            dy += sc(48);
+            draw_labeled_language(dx, dy, max_dw, str.result_actual_label, pal.warning_text, rep.actual_entry);
+            dy += sc(44);
+            draw_notice_box(Rect{dx, dy, max_dw, sc(64)},
+                            pal.warning_bg,
+                            pal.warning_border,
+                            pal.warning_text,
+                            str.result_mismatch_detail,
+                            small_px);
+        } else {
+            draw_labeled_language(dx, dy, max_dw, str.confirm_target_label, pal.text_secondary, rep.target_entry);
+            dy += sc(48);
+
+            char code_buf[64] = {};
+            std::snprintf(code_buf, sizeof(code_buf), "0x%08X", rep.error_code);
+            draw_text(buffer,
+                      stride,
+                      dx,
+                      dy,
+                      sub_px,
+                      str.result_label + ": " + code_buf,
+                      ui_pref,
+                      pal.error_text,
+                      max_dw);
+            dy += sc(44);
+
+            const std::string& detail_str =
+                (rep.outcome == ApplyOutcome::ReadbackFailed)
+                    ? str.result_readback_failed_detail
+                    : str.result_rejected_detail;
+            draw_notice_box(Rect{dx, dy, max_dw, sc(64)},
+                            pal.error_bg,
+                            pal.error_border,
+                            pal.error_text,
+                            detail_str,
+                            small_px);
+        }
+
+        fill_rect(buffer, stride, width_, height_, lay.result_continue_button, pal.button_primary_bg);
+        const int cont_w = measure_text_width(str.result_continue_button, body_px, ui_pref);
+        draw_text(buffer,
+                  stride,
+                  lay.result_continue_button.x + std::max(sc(12), (lay.result_continue_button.w - cont_w) / 2),
+                  lay.result_continue_button.y + sc(48),
+                  body_px,
+                  str.result_continue_button,
+                  ui_pref,
+                  pal.button_primary_text,
+                  lay.result_continue_button.w - sc(24));
     }
 }
 
