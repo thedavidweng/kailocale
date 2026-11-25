@@ -13,24 +13,15 @@ The project is still experimental. KaiLocale works completely offline, installs 
 
 ## Requirements
 
-- Nintendo Switch 2 running `kaiHEN 20261117.1` (verified on firmware `23.0.1`)
+- Nintendo Switch 2 kaiHEN (verified on firmware `23.0.1`, `kaiHEN 20261117.1`)
 
 ## Installation
 
-### Option 1 — SD Archive
+1. Download `KaiLocale-v0.1.0-sd.zip` (or `KaiLocale.nro`) and `SHA256SUMS` from the [latest release](https://github.com/thedavidweng/kailocale/releases), and optionally verify with `sha256sum -c SHA256SUMS`.
+2. Extract the archive to the root of your SD card—or copy `KaiLocale.nro` directly—so it sits at `sdmc:/switch/KaiLocale/KaiLocale.nro`.
+3. Start kaiHEN, open `hbmenu`, and launch KaiLocale.
 
-1. Download `KaiLocale-v0.1.0-sd.zip` and `SHA256SUMS` from the [latest release](https://github.com/thedavidweng/kailocale/releases).
-2. Verify the checksum with `sha256sum -c SHA256SUMS` (`shasum -a 256 -c SHA256SUMS` on macOS).
-3. Extract `KaiLocale-v0.1.0-sd.zip` to the root of your SD card so it creates `sdmc:/switch/KaiLocale/KaiLocale.nro`.
-4. Start kaiHEN, open `hbmenu`, and launch KaiLocale.
-
-### Option 2 — Bare NRO
-
-Copy `KaiLocale.nro` directly to `sdmc:/switch/KaiLocale/KaiLocale.nro`.
-
-### Uninstallation
-
-Delete `sdmc:/switch/KaiLocale/` from your SD card.
+To uninstall, delete `sdmc:/switch/KaiLocale/` from your SD card.
 
 ## Controls & Behavior
 
