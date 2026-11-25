@@ -50,7 +50,7 @@ docker-image:
 	docker build -t $(DOCKER_IMAGE) .
 
 docker-build: docker-image
-	docker run --rm -v "$(CURDIR):/work" -w /work $(DOCKER_IMAGE) \
+	docker run --rm --user "$$(id -u):$$(id -g)" -v "$(CURDIR):/work" -w /work $(DOCKER_IMAGE) \
 		bash -lc 'make clean && make switch2 && ./scripts/audit-artifacts.sh'
 
 audit:
