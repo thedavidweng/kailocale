@@ -43,7 +43,7 @@ jobs:
           (cd dist/release && sha256sum -c SHA256SUMS)
 
       - name: Upload release and debug symbol artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: kailocale-release-artifacts
           path: |
