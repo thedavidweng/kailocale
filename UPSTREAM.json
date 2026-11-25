@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "product": "KaiLocale",
+  "version": "0.1.0",
+  "verified_at": "2026-11-25T04:25:00Z",
+  "container": {
+    "image": "docker.io/devkitpro/devkita64:20260219",
+    "digest": "sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282",
+    "platform_manifests": {
+      "linux/amd64": "sha256:82575ea78651b530b2e232bb3799cfd1fe331514e053d5f724bb4b28191fb79d",
+      "linux/arm64": "sha256:645416b7ca52cbeccec64423d8a536e7f856521eceb964d4e7feeff54c5001f4"
+    }
+  },
+  "ounce_repository": {
+    "url": "https://pkg.ouncebrew.org",
+    "gpg_key_url": "https://pkg.ouncebrew.org/ounce.gpg",
+    "gpg_fingerprint": "DFEAE7FA965D1E6C0D41D4D75DB9FDBFA4A4DE29",
+    "gpg_uid": "ounce pacman repository"
+  },
+  "sdk_packages": {
+    "libounce": {
+      "repo": "ounce",
+      "version": "20261123-1",
+      "filename": "libounce-20261123-1-any.pkg.tar.zst",
+      "url": "https://pkg.ouncebrew.org/libounce-20261123-1-any.pkg.tar.zst",
+      "sha256": "16cb51c8c83a461fec8e88a906e8ac3d0753e3924cdc82668ef861624c0252dc",
+      "sig_sha256": "c7890c3e1292adee4f43139bc6f1d67b398820256719fd8bf2d0e21056c9f906",
+      "license": ["ISC", "MIT"],
+      "installed": true,
+      "linked": true
+    },
+    "libkaihen": {
+      "repo": "ounce",
+      "version": "20261123-1",
+      "filename": "libkaihen-20261123-1-any.pkg.tar.zst",
+      "url": "https://pkg.ouncebrew.org/libkaihen-20261123-1-any.pkg.tar.zst",
+      "sha256": "7d6d615138f5d02faa4f46d2dd3071290f84d56908a5278e90040efd10020a6f",
+      "sig_sha256": "3ad8fb6b4361e18b03a457e50fdcc3a1661165315336b4927b08bfdd4b8a53a6",
+      "license": ["ISC"],
+      "installed": true,
+      "linked": false,
+      "notes": "Installed in toolchain for SDK parity; Ticket #2 uses standard libounce sm/set/setsys services."
+    },
+    "ouncevk": {
+      "repo": "ounce",
+      "version": "20261123.1-1",
+      "filename": "ouncevk-20261123.1-1-any.pkg.tar.zst",
+      "url": "https://pkg.ouncebrew.org/ouncevk-20261123.1-1-any.pkg.tar.zst",
+      "sha256": "c2ee3f72e5d30e745eff5b82efdaeac1ffdcfd590a1cf63bac9ecc6f9507654a",
+      "license": ["MIT"],
+      "installed": false,
+      "linked": false,
+      "notes": "Evaluated in docs/adr/0001-renderer-choice.md; not installed or linked."
+    }
+  },
+  "portlib_packages": {
+    "switch-freetype": {
+      "repo": "dkp-libs",
+      "version": "2.13.3-1",
+      "filename": "switch-freetype-2.13.3-1-any.pkg.tar.zst",
+      "sha256": "1271c1c81758a29f6c47ccb3c34769aa03737775fff05d7ae6f64f36d77fe004",
+      "license": ["FTL", "GPL-2.0-or-later"],
+      "elected_license": "FTL"
+    },
+    "switch-harfbuzz": {
+      "repo": "dkp-libs",
+      "version": "10.0.1-1",
+      "filename": "switch-harfbuzz-10.0.1-1-any.pkg.tar.zst",
+      "sha256": "9d1ed03d580ed4cb3dd55365773d2e12bffefab9cff97a48ac9f5fd68051c14c",
+      "license_header": "Old-MIT",
+      "pacman_license_tag": "LGPL"
+    },
+    "switch-libpng": {
+      "repo": "dkp-libs",
+      "version": "1.6.48-1",
+      "filename": "switch-libpng-1.6.48-1-any.pkg.tar.zst",
+      "sha256": "99ea23b88c00dc678fff4290064916d5795db1f7445829420b689b29ac0078ff",
+      "license": ["libpng"]
+    },
+    "switch-zlib": {
+      "repo": "dkp-libs",
+      "version": "1.3.1-1",
+      "filename": "switch-zlib-1.3.1-1-any.pkg.tar.zst",
+      "sha256": "53cb5dc4006c96cd4195dabc15b46f07a63ad99c91939ce921db33556396442c",
+      "license": ["zlib"]
+    },
+    "switch-bzip2": {
+      "repo": "dkp-libs",
+      "version": "1.0.8-1",
+      "filename": "switch-bzip2-1.0.8-1-any.pkg.tar.xz",
+      "sha256": "f12b167f55ef49e2ddd9b2287cdfb702a2521f88e24ef23966b31d7c56e8acba",
+      "license": ["bzip2-1.0.6"]
+    }
+  },
+  "upstream_references": [
+    {
+      "name": "ouncebrew/kaihen",
+      "url": "https://github.com/ouncebrew/kaihen",
+      "branch": "main",
+      "commit": "3b23b5dc6e75539855eca69ffdda371ce69631bb",
+      "commit_date": "2026-11-24T19:47:11Z",
+      "license": "GPL-2.0-only (libkaihen: ISC)",
+      "code_copied": false,
+      "role": "Target runtime and homebrew SM/FS architecture authority"
+    },
+    {
+      "name": "ouncebrew/ounce-devkit",
+      "url": "https://github.com/ouncebrew/ounce-devkit",
+      "branch": "main",
+      "commit": "5e957599bd498643d82e5470aec80da67a12685d",
+      "commit_date": "2026-11-17T04:49:14Z",
+      "license": "MIT",
+      "code_copied": false,
+      "role": "Official [ounce] pacman toolchain setup convention"
+    },
+    {
+      "name": "ouncebrew/pacman",
+      "url": "https://github.com/ouncebrew/pacman",
+      "branch": "main",
+      "commit": "0e25688e3ed9cb3d374d8bff6767fbd8375229bf",
+      "commit_date": "2026-11-24T20:38:48Z",
+      "license": "MIT",
+      "code_copied": false,
+      "role": "Authoritative package release source pins"
+    },
+    {
+      "name": "ouncebrew/libounce",
+      "url": "https://github.com/ouncebrew/libounce",
+      "branch": "main",
+      "commit": "75e79e28a9d103c9c65e74d1bb1653a37b67b9cd",
+      "commit_date": "2026-11-24T19:22:52Z",
+      "license": "ISC (toolchain/mimalloc: MIT)",
+      "code_copied": false,
+      "role": "Official Switch 2 SDK (set, pad, applet, pl, framebuffer, OUN0 ABI)"
+    },
+    {
+      "name": "ouncebrew/ounce-hbmenu",
+      "url": "https://github.com/ouncebrew/ounce-hbmenu",
+      "branch": "main",
+      "commit": "43845d247487dedaa902f53f7d24ed61a116e982",
+      "commit_date": "2026-11-15T23:40:03Z",
+      "license": "ISC (nanosvg: zlib)",
+      "code_copied": false,
+      "role": "Launcher discovery, NACP/icon, input, and lifecycle reference"
+    },
+    {
+      "name": "ouncebrew/ounce-hbloader",
+      "url": "https://github.com/ouncebrew/ounce-hbloader",
+      "branch": "main",
+      "commit": "36b31e89e72be2b22931dd9d0edf7473d6c30069",
+      "commit_date": "2026-11-24T19:23:47Z",
+      "license": "ISC",
+      "code_copied": false,
+      "role": "NRO OUN0 platform check and launch/exit contract"
+    },
+    {
+      "name": "ouncebrew/ouncevk",
+      "url": "https://github.com/ouncebrew/ouncevk",
+      "branch": "main",
+      "commit": "97d70925dcd8ccab07f308e9dfd0ee5812e4a01c",
+      "commit_date": "2026-11-24T19:24:09Z",
+      "license": "MIT / Mesa permissive",
+      "code_copied": false,
+      "role": "Evaluated graphics stack (not adopted per ADR-0001)"
+    },
+    {
+      "name": "ouncebrew/hblist",
+      "url": "https://github.com/ouncebrew/hblist",
+      "branch": "main",
+      "commit": "ce1303fcc124b49058d502876d1fecf6ff8c9aa4",
+      "commit_date": "2026-11-23T00:23:06Z",
+      "license": "Unlicense",
+      "code_copied": false,
+      "role": "Switch 2 Homebrew List schema reference"
+    },
+    {
+      "name": "kurumuz/ounceshell",
+      "url": "https://github.com/kurumuz/ounceshell",
+      "branch": "master",
+      "commit": "b2655caf6f8e48084bde84f18c28f834358f8286",
+      "commit_date": "2026-11-14T03:24:01Z",
+      "license": "GPL-3.0",
+      "code_copied": false,
+      "role": "Switch 2 resolution-change event and font reference"
+    },
+    {
+      "name": "Sank-kab/KaiTube",
+      "url": "https://github.com/Sank-kab/KaiTube",
+      "branch": "main",
+      "commit": "7cd6e40bc9033103db9d7f9e5d88e899ce22912c",
+      "commit_date": "2026-11-14T05:51:56Z",
+      "license": "GPL-3.0",
+      "code_copied": false,
+      "role": "Community NS2 build verification reference"
+    },
+    {
+      "name": "soniciso1/switch2-language-nros",
+      "url": "https://github.com/soniciso1/switch2-language-nros",
+      "branch": "main",
+      "commit": "f49daf5a6fbdbe3dcc91cbbc1430de901c051969",
+      "commit_date": "2026-11-18T18:12:13Z",
+      "license": "None declared (research-only)",
+      "code_copied": false,
+      "role": "Research-only POC reference; zero code/assets/scripts copied"
+    },
+    {
+      "name": "hrvtuirvw/switch2-language-experiment",
+      "url": "https://github.com/hrvtuirvw/switch2-language-experiment",
+      "branch": "main",
+      "commit": "2c9b399632b333304c226755518c3fa515393039",
+      "commit_date": "2026-11-12T05:20:07Z",
+      "license": "None declared (research-only)",
+      "code_copied": false,
+      "role": "Research-only language table & firmware observations; zero code copied"
+    },
+    {
+      "name": "thedavidweng/wiliwili-ns2",
+      "url": "https://github.com/thedavidweng/wiliwili-ns2",
+      "branch": "main",
+      "commit": "1318c4bfa822c3b6c848b36634325848b1023f40",
+      "commit_date": "2026-11-25T04:04:41Z",
+      "license": "GPL-3.0",
+      "code_copied": false,
+      "role": "Engineering baseline for provenance, artifact audit, and device gates"
+    }
+  ]
+}
