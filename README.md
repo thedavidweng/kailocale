@@ -1,21 +1,25 @@
+<p align="center">
+  <img src="docs/images/icon.png" width="112" alt="KaiLocale" />
+</p>
+
 # KaiLocale
 
 KaiLocale is a native system language switcher for Switch 2 consoles running kaiHEN. It provides a single controller-first picker to inspect the current system language, browse supported Horizon OS languages in their native scripts, and apply a change after explicit confirmation.
 
 The project is still experimental. KaiLocale works completely offline, installs no background services, and only updates the confirmed system language without modifying region, account, firmware, or save data.
 
-## Features
-
-- **Single `hbmenu` entry:** One native Switch 2 NRO (`switch/KaiLocale/KaiLocale.nro`) instead of 18 separate language NROs.
-- **Runtime language discovery:** Reads supported Horizon OS BCP-47 tags directly via `libounce` (`set` / `set:sys`) while excluding Switch 1 legacy read-only compat tags (`zh-CN`, `zh-TW`).
-- **Multilingual rendering:** Displays Latin, Cyrillic, Japanese, Korean, Simplified Chinese, Traditional Chinese, and Thai autonyms via `pl:u` shared system fonts and bundled OFL-1.1 Noto fallbacks.
-- **Safe confirmation & readback:** Read-only while browsing, no-op when selecting the active language, and verifies applied changes via `setGetLanguageCode()` readback.
-
 ## Screenshots
 
 | Language List (Dark) | Confirmation Dialog (Dark) | Confirmation Dialog (Light, 中文) |
 |---|---|---|
 | ![Language list in dark theme](docs/images/list-dark.png) | ![Confirmation dialog in dark theme](docs/images/confirm-dark.png) | ![Confirmation dialog in light theme with Chinese UI](docs/images/confirm-light-zh.png) |
+
+## Features
+
+- **Single `hbmenu` entry:** Installs as one standalone Switch 2 NRO (`switch/KaiLocale/KaiLocale.nro`).
+- **Runtime language discovery:** Reads supported Horizon OS BCP-47 tags directly via `libounce` (`set` / `set:sys`) while excluding Switch 1 legacy read-only compat tags (`zh-CN`, `zh-TW`).
+- **Localized interface & native scripts:** Adapts UI copy across all supported Horizon OS languages and renders Latin, Cyrillic, Japanese, Korean, Simplified Chinese, Traditional Chinese, and Thai autonyms via `pl:u` shared system fonts and bundled OFL-1.1 Noto fallbacks.
+- **Safe confirmation & readback:** Read-only while browsing, no-op when selecting the active language, and verifies applied changes via `setGetLanguageCode()` readback.
 
 ## Requirements
 
