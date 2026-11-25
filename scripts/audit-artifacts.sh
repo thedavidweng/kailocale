@@ -34,7 +34,18 @@ fi
 
 echo "[audit] Checking single build configuration & provenance manifest..."
 test ! -f "CMakeLists.txt" || { echo "FAIL: competing CMakeLists.txt present" >&2; exit 1; }
-python3 -c 'import json; d = json.load(open("UPSTREAM.json")); assert d["sdk_packages"]["libounce"]["version"] == "20261123-1"'
+test -s "README.md" || { echo "FAIL: missing or empty README.md" >&2; exit 1; }
+python3 - << 'PY'
+import json
+
+with open("UPSTREAM.json", "r", encoding="utf-8") as f:
+    raw = f.read()
+assert "Ticket #" not in raw, "Dev-phase 'Ticket #' text left in UPSTREAM.json"
+d = json.loads(raw)
+assert d["sdk_packages"]["libounce"]["version"] == "20261123-1"
+assert d["sdk_packages"]["libkaihen"]["version"] == "20261123-1"
+assert d["container"]["digest"].startswith("sha256:")
+PY
 
 echo "[audit] Checking LICENSE, LICENSES/, and THIRD_PARTY_NOTICES.md references..."
 python3 - << 'PY'
@@ -65,13 +76,46 @@ assert bundled_licenses == sorted(license_refs), (
 )
 PY
 
-echo "[audit] Checking repo/dist for proprietary Nintendo font or asset files..."
-PROPRIETARY_FILES="$(find . -maxdepth 5 -not -path './.git/*' \( -iname '*.bfttf' -o -iname 'switch_font*.ttf' -o -iname 'keymap_*.ttf' \))"
+echo "[audit] Checking repo/dist for proprietary Nintendo files, secrets, or personal identifiers..."
+PROPRIETARY_FILES="$(find . -maxdepth 5 -not -path './.git/*' \( -iname '*.bfttf' -o -iname 'switch_font*.ttf' -o -iname 'keymap_*.ttf' -o -iname '*.xci' -o -iname '*.nsp' -o -iname '*.nca' -o -iname 'prod.keys' -o -iname 'title.keys' -o -iname 'hbmenu.nro' \))"
 if [ -n "$PROPRIETARY_FILES" ]; then
-    echo "FAIL: proprietary font asset detected:" >&2
+    echo "FAIL: proprietary or out-of-scope file detected:" >&2
     echo "$PROPRIETARY_FILES" >&2
     exit 1
 fi
+python3 - << 'PY'
+import os
+import re
+import subprocess
+
+SECRET_RE = re.compile(
+    r"(/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
+)
+
+if os.path.isdir(".git"):
+    files = subprocess.check_output(["git", "ls-files", "-z"], text=False).split(b"\x00")
+    paths = [p.decode("utf-8", "replace") for p in files if p]
+else:
+    paths = []
+    for root, dirs, filenames in os.walk("."):
+        dirs[:] = [d for d in dirs if d not in (".git", "build", "build-host", "dist")]
+        for fn in filenames:
+            paths.append(os.path.join(root, fn))
+
+for path in paths:
+    if not os.path.isfile(path):
+        continue
+    with open(path, "rb") as f:
+        data = f.read()
+    if b"\x00" in data:
+        continue
+    text = data.decode("utf-8", "replace")
+    # Allow documenting this very regex in scripts/audit-artifacts.sh and scripts/package-release.sh
+    if path in ("scripts/audit-artifacts.sh", "scripts/package-release.sh"):
+        continue
+    m = SECRET_RE.search(text)
+    assert not m, f"Prohibited secret or personal path pattern {m.group(0)!r} found in {path}"
+PY
 
 echo "[audit] Auditing ELF sections, NRO0/OUN0/ASET/NACP, and embedded 256x256 baseline JPEG icon..."
 python3 - "$NRO_PATH" "$ELF_PATH" "$MAP_PATH" << 'PY'

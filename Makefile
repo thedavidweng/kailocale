@@ -23,7 +23,7 @@ INCLUDES	:=	include src
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
-.PHONY: all switch2 host-test test docker-image docker-build audit clean clean-host
+.PHONY: all switch2 host-test test docker-image docker-build audit release clean clean-host
 
 ifeq ($(strip $(DEVKITPRO)),)
 all: host-test
@@ -55,6 +55,9 @@ docker-build: docker-image
 
 audit:
 	./scripts/audit-artifacts.sh
+
+release:
+	./scripts/package-release.sh
 
 switch2:
 ifeq ($(strip $(DEVKITPRO)),)

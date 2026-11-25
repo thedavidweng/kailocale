@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    name: Host Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run deterministic host tests
+        run: make host-test
+
+  switch2-release-audit:
+    name: Switch 2 Release Build & Artifact Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Switch 2 Release NRO and run artifact audit in pinned container
+        run: make docker-build
+
+      - name: Package and verify release artifacts
+        run: |
+          make release
+          unzip -l dist/release/KaiLocale-v0.1.0-sd.zip
+          python3 - << 'PY'
+          import zipfile
+          with zipfile.ZipFile("dist/release/KaiLocale-v0.1.0-sd.zip", "r") as zf:
+              assert zf.namelist() == ["switch/KaiLocale/KaiLocale.nro"]
+          PY
+          (cd dist/release && sha256sum -c SHA256SUMS)
+
+      - name: Upload release and debug symbol artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kailocale-release-artifacts
+          path: |
+            dist/release/
+            dist/debug/
+          retention-days: 14
