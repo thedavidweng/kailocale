@@ -46,10 +46,11 @@ commit_ts = 1795651200  # fallback UTC epoch if .git absent
 commit_iso = None
 source_dirty = None
 if os.path.isdir(".git"):
-    source_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    commit_ts = int(subprocess.check_output(["git", "show", "-s", "--format=%ct", "HEAD"], text=True).strip())
-    commit_iso = subprocess.check_output(["git", "show", "-s", "--format=%cI", "HEAD"], text=True).strip()
-    dirty_out = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
+    git_safe = ["git", "-c", f"safe.directory={os.getcwd()}"]
+    source_commit = subprocess.check_output(git_safe + ["rev-parse", "HEAD"], text=True).strip()
+    commit_ts = int(subprocess.check_output(git_safe + ["show", "-s", "--format=%ct", "HEAD"], text=True).strip())
+    commit_iso = subprocess.check_output(git_safe + ["show", "-s", "--format=%cI", "HEAD"], text=True).strip()
+    dirty_out = subprocess.check_output(git_safe + ["status", "--porcelain"], text=True).strip()
     source_dirty = bool(dirty_out)
 
 dt = datetime.datetime.fromtimestamp(commit_ts, tz=datetime.timezone.utc)

@@ -93,7 +93,9 @@ SECRET_RE = re.compile(
 )
 
 if os.path.isdir(".git"):
-    files = subprocess.check_output(["git", "ls-files", "-z"], text=False).split(b"\x00")
+    files = subprocess.check_output(
+        ["git", "-c", f"safe.directory={os.getcwd()}", "ls-files", "-z"], text=False
+    ).split(b"\x00")
     paths = [p.decode("utf-8", "replace") for p in files if p]
 else:
     paths = []
