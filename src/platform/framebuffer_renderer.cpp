@@ -354,10 +354,10 @@ void FramebufferRenderer::draw_text(const RenderSurface& surface,
         if (max_width > 0 && pen_x + glyph.x_advance > x_limit) {
             break;
         }
-        if (FT_Load_Glyph(glyph.face, glyph.glyph_index, FT_LOAD_RENDER) == 0) {
+        if (FT_Load_Glyph(glyph.face, glyph.glyph_index, FT_LOAD_RENDER | FT_LOAD_NO_BITMAP) == 0) {
             const FT_GlyphSlot slot = glyph.face->glyph;
             const FT_Bitmap& bmp = slot->bitmap;
-            if (bmp.buffer != nullptr) {
+            if (bmp.buffer != nullptr && bmp.pixel_mode == FT_PIXEL_MODE_GRAY) {
                 const int gx = pen_x + glyph.x_offset + slot->bitmap_left;
                 const int gy = baseline_y - glyph.y_offset - slot->bitmap_top;
                 for (unsigned int row = 0; row < bmp.rows; ++row) {

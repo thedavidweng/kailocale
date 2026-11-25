@@ -39,7 +39,7 @@
       "license": ["ISC"],
       "installed": true,
       "linked": false,
-      "notes": "Installed in toolchain for SDK parity; Ticket #2 uses standard libounce sm/set/setsys services."
+      "notes": "Installed in toolchain for SDK parity; KaiLocale uses standard libounce sm/set/setsys services."
     },
     "ouncevk": {
       "repo": "ounce",
