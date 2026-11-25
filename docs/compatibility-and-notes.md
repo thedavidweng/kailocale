@@ -2,7 +2,7 @@
 
 This document holds the detailed compatibility matrix, Horizon OS behavior notes, build artifact details, and risk disclosures referenced from [`README.md`](../README.md).
 
-## Tested Compatibility Matrix (`v0.1.0`)
+## Tested Compatibility Matrix
 
 Hardware verification is recorded in [`docs/device-acceptance.md`](device-acceptance.md).
 
@@ -13,14 +13,14 @@ Hardware verification is recorded in [`docs/device-acceptance.md`](device-accept
 | **`kaiHEN`** | `kaiHEN 20261117.1` |
 | **`[ounce]` SDK** | `libounce 20261123-1` (`devkitpro/devkita64:20260219`) |
 | **Tested Modes & Input** | Handheld + Docked, attached Joy-Con 2, handheld touch |
-| **Not Tested in `v0.1.0`** | Detached Joy-Con 2, Pro Controller, explicit 3× sleep/wake & 3× dock/undock stress cycles, 5× launch/exit repetition count, separate reboot persistence |
+| **Not Tested** | Detached Joy-Con 2, Pro Controller, explicit 3× sleep/wake & 3× dock/undock stress cycles, 5× launch/exit repetition count |
 
 ## Observed Horizon OS Behavior (`23.0.1`)
 
 - **System Settings & games:** Confirmed language switches (verified via `setGetLanguageCode()` readback) take effect **immediately** in System Settings and in-game / newly launched games.
 - **HOME Menu:** The Horizon HOME Menu UI language does **not** update dynamically without a reboot or session reload.
 - **Running apps:** Any already-running software must be reopened to reflect the new system language, and individual titles only display languages they ship with.
-- **Reboot persistence:** **Not tested** in the `v0.1.0` hardware pass. Do not assume whether a reboot retains or reverts the switched language.
+- **Reboot persistence:** Verified on hardware (`23.0.1`): the language change applied before rebooting is retained across a console restart.
 - **Legacy Switch 1 compat tags (`zh-CN`, `zh-TW`):** `setGetAvailableLanguageCodes()` on Switch 2 returns `zh-CN` and `zh-TW` alongside `zh-Hans` and `zh-Hant`, but `setsysSetLanguageCode()` rejects `zh-CN` on hardware (`23.0.1`). KaiLocale excludes `zh-CN` and `zh-TW` from selectable menu choices (see [`docs/adr/0002-bcp47-language-codes.md`](adr/0002-bcp47-language-codes.md)).
 
 ## Privacy, Scope & Safety Guarantees

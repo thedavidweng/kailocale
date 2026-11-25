@@ -44,7 +44,7 @@ To uninstall, delete `sdmc:/switch/KaiLocale/` from your SD card.
 | **Touch** *(Handheld)* | Tap to focus/confirm; drag vertically to scroll |
 
 - **Immediate vs. HOME Menu effect (`23.0.1`):** System Settings and newly launched / in-game languages update immediately; the HOME Menu UI language does not change dynamically without a reboot or session reload, and already-running apps must be reopened.
-- **Reboot persistence:** Not tested in the `v0.1.0` hardware pass (see [`docs/device-acceptance.md`](docs/device-acceptance.md) and [`docs/compatibility-and-notes.md`](docs/compatibility-and-notes.md)).
+- **Reboot persistence:** Verified on hardware (`23.0.1`): a system language change applied via KaiLocale persists across a console reboot (see [`docs/device-acceptance.md`](docs/device-acceptance.md) and [`docs/compatibility-and-notes.md`](docs/compatibility-and-notes.md)).
 - **Risk notice:** Experimental homebrew carries platform and account risks with no claims of undetectability or ban safety.
 
 ## Building

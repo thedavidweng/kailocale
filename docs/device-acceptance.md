@@ -71,7 +71,7 @@ Fill out all fields without personal identifiers, serial numbers, MAC addresses,
 | 9 | Existing homebrew functionality remains available after normal application exit. | `pass` | Verified. |
 | 10 | Actual behavior in newly launched applications and Horizon system UI is recorded accurately. | `pass` | Observed on `23.0.1`: **System Settings and in-game / newly launched game languages update immediately**, while **HOME Menu UI language does not change dynamically** after switching. |
 | 11 | The need to reopen specific/running applications to reflect the new language is documented. | `pass` | Recorded here and for `README.md` release docs (`#6`). |
-| 12 | Reboot persistence is tested separately, with the tester's original language restored through supported means. | `not tested` | Separate reboot persistence test not executed in this pass. |
+| 12 | Reboot persistence is tested separately, with the tester's original language restored through supported means. | `pass` | Follow-up owner hardware check on `23.0.1` (`2026-11-25`): confirmed the language applied via KaiLocale prior to reboot remained saved after restarting the console. |
 | 13 | No unrelated system modifications (region, hardware identity, account country, firmware, saves) are introduced. | `pass` | Verified. |
 
 ---
@@ -79,4 +79,4 @@ Fill out all fields without personal identifiers, serial numbers, MAC addresses,
 ## Owner Sign-Off
 
 - **Gate G1 decision:** `approved` (scope: handheld + docked, attached Joy-Con 2, handheld touch; detached Joy-Con / Pro Controller / 3x sleep-wake / 5x exit stress cycles `not tested`) — Owner: `thedavidweng`, Date: `2026-11-25`
-- **Gate G2 decision:** `approved` (scope: `23.0.1` + `kaiHEN 20261117.1` in-session switching & readback; separate reboot persistence `not tested`) — Owner: `thedavidweng`, Date: `2026-11-25`
+- **Gate G2 decision:** `approved` (scope: `23.0.1` + `kaiHEN 20261117.1` in-session switching & readback; follow-up owner check on `2026-11-25` verified reboot persistence) — Owner: `thedavidweng`, Date: `2026-11-25`
