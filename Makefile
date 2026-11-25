@@ -33,8 +33,16 @@ endif
 
 host-test:
 	@mkdir -p $(HOST_BUILD)
-	$(HOST_CXX) $(HOST_CXXFLAGS) -Iinclude src/core/app_shell.cpp tests/test_app_shell.cpp -o $(HOST_BUILD)/test_app_shell
+	$(HOST_CXX) $(HOST_CXXFLAGS) -Iinclude src/core/app_shell.cpp src/core/language_catalog.cpp src/core/localization.cpp src/core/picker_layout.cpp src/core/language_picker.cpp tests/test_app_shell.cpp -o $(HOST_BUILD)/test_app_shell
 	./$(HOST_BUILD)/test_app_shell
+	$(HOST_CXX) $(HOST_CXXFLAGS) -Iinclude src/core/language_catalog.cpp tests/test_language_catalog.cpp -o $(HOST_BUILD)/test_language_catalog
+	./$(HOST_BUILD)/test_language_catalog
+	$(HOST_CXX) $(HOST_CXXFLAGS) -Iinclude src/core/language_catalog.cpp src/core/localization.cpp tests/test_localization_theme.cpp -o $(HOST_BUILD)/test_localization_theme
+	./$(HOST_BUILD)/test_localization_theme
+	$(HOST_CXX) $(HOST_CXXFLAGS) -Iinclude src/core/language_catalog.cpp src/core/localization.cpp src/core/picker_layout.cpp src/core/language_picker.cpp tests/test_language_picker.cpp -o $(HOST_BUILD)/test_language_picker
+	./$(HOST_BUILD)/test_language_picker
+	$(HOST_CXX) $(HOST_CXXFLAGS) -Iinclude src/core/text_runs.cpp tests/test_text_runs.cpp -o $(HOST_BUILD)/test_text_runs
+	./$(HOST_BUILD)/test_text_runs
 
 test: host-test
 
@@ -74,19 +82,24 @@ include $(DEVKITPRO)/libounce/switch2_rules
 ARCH		:=	$(SWITCH2_CPU) -mtp=soft -fPIE
 
 export OUTPUT	:=	$(CURDIR)/$(TARGET)
-export VPATH	:=	$(foreach dir,$(SOURCES),$(TOPDIR)/$(dir))
+export VPATH	:=	$(foreach dir,$(SOURCES),$(TOPDIR)/$(dir)) $(TOPDIR)/assets/fonts
 export DEPSDIR	:=	$(CURDIR)
 
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(TOPDIR)/$(dir)/*.cpp)))
 CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(TOPDIR)/$(dir)/*.c)))
 SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(TOPDIR)/$(dir)/*.s)))
+TTFFILES	:=	$(notdir $(wildcard $(TOPDIR)/assets/fonts/*.ttf))
 
 export LD	:=	$(CXX)
-export OFILES	:=	$(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
+export OFILES_BIN	:=	$(TTFFILES:.ttf=.ttf.o)
+export OFILES_SRC	:=	$(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
+export OFILES	:=	$(OFILES_BIN) $(OFILES_SRC)
+export HFILES_TTF	:=	$(TTFFILES:.ttf=_ttf.h)
 
 LIBDIRS		:=	$(PORTLIBS) $(LIBNX)
 export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(TOPDIR)/$(dir)) \
 			-isystem $(PORTLIBS)/include/freetype2 \
+			-isystem $(PORTLIBS)/include/harfbuzz \
 			$(foreach dir,$(LIBDIRS),-isystem $(dir)/include) \
 			-I$(CURDIR)
 
@@ -101,7 +114,7 @@ export LIBS	:=	-lfreetype -lharfbuzz -lpng16 -lbz2 -lz -lm -lnx
 
 export NROFLAGS	+=	--icon=$(APP_ICON) --nacp=$(CURDIR)/$(TARGET).nacp
 
-DEPENDS		:=	$(OFILES:.o=.d)
+DEPENDS		:=	$(OFILES_SRC:.o=.d)
 
 .PHONY: all
 all: $(OUTPUT).nro
@@ -109,6 +122,12 @@ all: $(OUTPUT).nro
 $(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp
 
 $(OUTPUT).elf: $(OFILES)
+
+$(OFILES_SRC): $(HFILES_TTF)
+
+%.ttf.o %_ttf.h: %.ttf
+	@echo $(notdir $<)
+	@(bin2s -a 4 -H $*_ttf.h $<; printf '\n') | $(AS) -o $*.ttf.o
 
 -include $(DEPENDS)
 

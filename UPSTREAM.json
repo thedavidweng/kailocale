@@ -92,6 +92,31 @@
       "license": ["bzip2-1.0.6"]
     }
   },
+  "bundled_fallback_fonts": {
+    "NotoSans-Regular.ttf": {
+      "repo": "notofonts/notofonts.github.io",
+      "commit": "d14cc173a70dc57962ed2d4ad278fc9df83bf9f3",
+      "url": "https://raw.githubusercontent.com/notofonts/notofonts.github.io/d14cc173a70dc57962ed2d4ad278fc9df83bf9f3/fonts/NotoSans/googlefonts/ttf/NotoSans-Regular.ttf",
+      "sha256": "97eaf07030b89da4eceace86b12f4d7debb3cb212082c3938803eac7111221c9",
+      "license": "OFL-1.1",
+      "role": "Fallback font for Latin and Cyrillic when pl shared fonts are unavailable"
+    },
+    "NotoSansThai-Regular.ttf": {
+      "repo": "notofonts/notofonts.github.io",
+      "commit": "d14cc173a70dc57962ed2d4ad278fc9df83bf9f3",
+      "url": "https://raw.githubusercontent.com/notofonts/notofonts.github.io/d14cc173a70dc57962ed2d4ad278fc9df83bf9f3/fonts/NotoSansThai/googlefonts/ttf/NotoSansThai-Regular.ttf",
+      "sha256": "7f890179ceabb5f34a17702271c83c015c807fc78deaf52de859f6ec8847c1cf",
+      "license": "OFL-1.1",
+      "role": "Fallback font for Thai script and combining marks if pl shared fonts lack Thai glyphs"
+    },
+    "OFL-1.1.txt": {
+      "repo": "notofonts/thai",
+      "commit": "9ef4bbfd97e2187b5e526d123c04a0a35b91333d",
+      "url": "https://raw.githubusercontent.com/notofonts/thai/9ef4bbfd97e2187b5e526d123c04a0a35b91333d/OFL.txt",
+      "sha256": "dad6e6abc2bf3fc37cc698af7607c3f4d4235039695713b222e5a034fb5b9b1c",
+      "license": "OFL-1.1"
+    }
+  },
   "upstream_references": [
     {
       "name": "ouncebrew/kaihen",

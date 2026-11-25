@@ -75,7 +75,7 @@ for h in sh_hdrs:
     if read_cstr(shstrtab, h[0]) == ".strtab":
         strtab_data = elf[h[4]:h[4] + h[5]]
         break
-for forbidden_sym in (b"socketInitialize", b"curl_easy_", b"setsysSetLanguageCode"):
+for forbidden_sym in (b"socketInitialize", b"curl_easy_", b"setsysSetLanguageCode", b"setMakeLanguage", b"setMakeLanguageCode"):
     assert forbidden_sym not in strtab_data, f"Forbidden symbol present in ELF: {forbidden_sym!r}"
 
 # 2. Parse NRO0 header

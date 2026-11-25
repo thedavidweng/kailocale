@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 
+#include "kailocale/language_service.hpp"
 #include "kailocale/platform_services.hpp"
 
 namespace kailocale {
@@ -21,14 +22,15 @@ struct ShellOutcome {
     bool succeeded() const { return reason != ExitReason::InitFailed; }
 };
 
-/// Coordinates ordered service initialization, visible init-error/ready presentation, and reverse teardown.
+/// Coordinates ordered service initialization, visible init-error/picker loop, and reverse teardown.
 class AppShell {
 public:
-    explicit AppShell(PlatformServices& platform);
+    AppShell(PlatformServices& platform, LanguageService& language_service);
     ShellOutcome run();
 
 private:
     PlatformServices& platform_;
+    LanguageService& language_service_;
 };
 
 } // namespace kailocale

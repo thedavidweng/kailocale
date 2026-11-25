@@ -73,3 +73,19 @@ Switch 2 Release build:
 ### bzip2 (`switch-bzip2` `1.0.8-1`)
 - URL: <https://sourceware.org/bzip2/>
 - License: bzip2-1.0.6 BSD-style permissive license.
+
+---
+
+## 4. Bundled Fallback Fonts (SIL Open Font License 1.1)
+
+Used strictly as embedded runtime fallbacks when `pl` shared fonts omit Thai
+glyphs or are unavailable; no proprietary Nintendo font binaries are bundled.
+
+- **`NotoSans-Regular.ttf`** (Latin & Cyrillic fallback)
+  - Source: `notofonts/notofonts.github.io` (`d14cc173a70dc57962ed2d4ad278fc9df83bf9f3`)
+  - Copyright 2022 The Noto Project Authors (<https://github.com/notofonts/latin-greek-cyrillic>)
+  - License: **SIL Open Font License, Version 1.1** (`assets/fonts/OFL-1.1.txt`)
+- **`NotoSansThai-Regular.ttf`** (Thai fallback)
+  - Source: `notofonts/notofonts.github.io` (`d14cc173a70dc57962ed2d4ad278fc9df83bf9f3`)
+  - Copyright 2022 The Noto Project Authors (<https://github.com/notofonts/thai>)
+  - License: **SIL Open Font License, Version 1.1** (`assets/fonts/OFL-1.1.txt`)

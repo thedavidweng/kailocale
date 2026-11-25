@@ -6,21 +6,54 @@
 #include <vector>
 
 #include "kailocale/app_shell.hpp"
+#include "kailocale/language_catalog.hpp"
+#include "kailocale/language_picker.hpp"
 
 namespace {
 
+using kailocale::AvailableLanguagesResult;
 using kailocale::InputSnapshot;
+using kailocale::LanguagePicker;
+using kailocale::LanguageReadResult;
+using kailocale::LanguageService;
+using kailocale::PickerScreen;
+using kailocale::PickerView;
 using kailocale::PlatformServices;
 using kailocale::ServiceResult;
 using kailocale::ShellOutcome;
 using kailocale::ShellScreenKind;
 using kailocale::ShellView;
+using kailocale::SystemTheme;
+using kailocale::pack_language_code;
+
+class FakeLanguageService final : public LanguageService {
+public:
+    LanguageReadResult current_result{ServiceResult::success(), pack_language_code("en-US")};
+    AvailableLanguagesResult available_result{
+        ServiceResult::success(),
+        {pack_language_code("ja"), pack_language_code("en-US"), pack_language_code("zh-Hans")},
+    };
+    SystemTheme theme = SystemTheme::Dark;
+
+    LanguageReadResult read_current_language() override {
+        return current_result;
+    }
+
+    AvailableLanguagesResult read_available_languages() override {
+        return available_result;
+    }
+
+    SystemTheme read_system_theme() override {
+        return theme;
+    }
+};
 
 class FakePlatformServices final : public PlatformServices {
 public:
     std::vector<InputSnapshot> frames;
     std::vector<std::string> events;
-    std::vector<ShellView> rendered;
+    std::vector<ShellView> rendered_status;
+    std::vector<PickerView> rendered_picker;
 
     ServiceResult exit_lock_result = ServiceResult::success();
     ServiceResult display_result = ServiceResult::success();
@@ -29,6 +62,8 @@ public:
     ServiceResult set_result = ServiceResult::success();
     ServiceResult setsys_result = ServiceResult::success();
     ServiceResult shared_font_result = ServiceResult::success();
+    std::uint32_t width = 1920;
+    std::uint32_t height = 1080;
 
     ServiceResult init_exit_lock() override {
         events.push_back("init:exit_lock");
@@ -42,6 +77,8 @@ public:
     }
     ServiceResult resize_display() override {
         events.push_back("resize:display");
+        width = 3840;
+        height = 2160;
         return resize_result;
     }
     void exit_display() override { events.push_back("exit:display"); }
@@ -70,16 +107,25 @@ public:
     }
     void exit_shared_font() override { events.push_back("exit:shared_font"); }
 
+    std::uint32_t viewport_width() const override { return width; }
+    std::uint32_t viewport_height() const override { return height; }
+
     InputSnapshot poll_frame() override {
         ++poll_count;
         if (frame_cursor_ < frames.size()) {
             return frames[frame_cursor_++];
         }
-        return InputSnapshot{false, false, false};
+        InputSnapshot stop;
+        stop.applet_running = false;
+        return stop;
     }
 
     void render_status(const ShellView& view) override {
-        rendered.push_back(view);
+        rendered_status.push_back(view);
+    }
+
+    void render_picker(const PickerView& view) override {
+        rendered_picker.push_back(view);
     }
 
     std::size_t poll_count = 0;
@@ -99,20 +145,21 @@ private:
 
 void test_clean_startup_plus_exit_and_reverse_teardown() {
     FakePlatformServices fake;
-    fake.frames = {
-        InputSnapshot{true, false, false},
-        InputSnapshot{true, true, false},
-    };
+    FakeLanguageService lang;
+    InputSnapshot idle;
+    InputSnapshot plus;
+    plus.plus_held = true;
+    fake.frames = {idle, plus};
 
-    kailocale::AppShell shell(fake);
+    kailocale::AppShell shell(fake, lang);
     const ShellOutcome outcome = shell.run();
 
     CHECK(outcome.reason == kailocale::ExitReason::UserPlus);
     CHECK(outcome.succeeded());
-    CHECK(!fake.rendered.empty());
-    CHECK(fake.rendered.front().kind == ShellScreenKind::Ready);
-    CHECK(std::string(fake.rendered.front().app_name) == "KaiLocale");
-    CHECK(std::string(fake.rendered.front().app_version) == "0.1.0");
+    CHECK(fake.rendered_picker.size() == 1);
+    CHECK(fake.rendered_picker[0].screen == PickerScreen::List);
+    CHECK(std::string(fake.rendered_picker[0].app_name) == "KaiLocale");
+    CHECK(std::string(fake.rendered_picker[0].app_version) == "0.1.0");
 
     const std::vector<std::string> expected_events = {
         "init:exit_lock",
@@ -133,13 +180,14 @@ void test_clean_startup_plus_exit_and_reverse_teardown() {
 
 void test_setsys_init_failure_renders_visible_error_and_tears_down_acquired_subset() {
     FakePlatformServices fake;
+    FakeLanguageService lang;
     fake.setsys_result = ServiceResult::failure(0x4201);
-    fake.frames = {
-        InputSnapshot{true, false, false},
-        InputSnapshot{true, true, false},
-    };
+    InputSnapshot idle;
+    InputSnapshot plus;
+    plus.plus_held = true;
+    fake.frames = {idle, plus};
 
-    kailocale::AppShell shell(fake);
+    kailocale::AppShell shell(fake, lang);
     const ShellOutcome outcome = shell.run();
 
     CHECK(outcome.reason == kailocale::ExitReason::InitFailed);
@@ -147,10 +195,11 @@ void test_setsys_init_failure_renders_visible_error_and_tears_down_acquired_subs
     CHECK(outcome.failed_stage == "set:sys");
     CHECK(outcome.error_code == 0x4201u);
 
-    CHECK(fake.rendered.size() == 1);
-    CHECK(fake.rendered[0].kind == ShellScreenKind::InitError);
-    CHECK(fake.rendered[0].stage == "set:sys");
-    CHECK(fake.rendered[0].error_code == 0x4201u);
+    CHECK(fake.rendered_status.size() == 1);
+    CHECK(fake.rendered_status[0].kind == ShellScreenKind::InitError);
+    CHECK(fake.rendered_status[0].stage == "set:sys");
+    CHECK(fake.rendered_status[0].error_code == 0x4201u);
+    CHECK(fake.rendered_picker.empty());
     CHECK(fake.poll_count == 2);
 
     const std::vector<std::string> expected_events = {
@@ -167,21 +216,25 @@ void test_setsys_init_failure_renders_visible_error_and_tears_down_acquired_subs
     CHECK(fake.events == expected_events);
 }
 
-void test_resolution_change_resizes_and_rerenders_ready_screen() {
+void test_resolution_change_resizes_and_rerenders_picker_only_when_dirty() {
     FakePlatformServices fake;
-    fake.frames = {
-        InputSnapshot{true, false, true},
-        InputSnapshot{true, false, false},
-        InputSnapshot{true, true, false},
-    };
+    FakeLanguageService lang;
+    InputSnapshot res_change;
+    res_change.resolution_changed = true;
+    InputSnapshot idle;
+    InputSnapshot plus;
+    plus.plus_held = true;
+    fake.frames = {res_change, idle, idle, plus};
 
-    kailocale::AppShell shell(fake);
+    kailocale::AppShell shell(fake, lang);
     const ShellOutcome outcome = shell.run();
 
     CHECK(outcome.reason == kailocale::ExitReason::UserPlus);
-    CHECK(fake.rendered.size() == 2);
-    CHECK(fake.rendered[0].kind == ShellScreenKind::Ready);
-    CHECK(fake.rendered[1].kind == ShellScreenKind::Ready);
+    // Initial render + resolution-change render; idle frames must NOT trigger redundant draws.
+    CHECK(fake.rendered_picker.size() == 2);
+    CHECK(fake.rendered_picker[0].layout.viewport_width == 1920);
+    CHECK(fake.rendered_picker[1].layout.viewport_width == 3840);
+    CHECK(fake.rendered_picker[1].layout.viewport_height == 2160);
 
     const std::vector<std::string> expected_events = {
         "init:exit_lock",
@@ -203,16 +256,18 @@ void test_resolution_change_resizes_and_rerenders_ready_screen() {
 
 void test_display_init_failure_skips_render_and_unwinds_exit_lock() {
     FakePlatformServices fake;
+    FakeLanguageService lang;
     fake.display_result = ServiceResult::failure(0x9001);
 
-    kailocale::AppShell shell(fake);
+    kailocale::AppShell shell(fake, lang);
     const ShellOutcome outcome = shell.run();
 
     CHECK(outcome.reason == kailocale::ExitReason::InitFailed);
     CHECK(!outcome.succeeded());
     CHECK(outcome.failed_stage == "display");
     CHECK(outcome.error_code == 0x9001u);
-    CHECK(fake.rendered.empty());
+    CHECK(fake.rendered_status.empty());
+    CHECK(fake.rendered_picker.empty());
     CHECK(fake.poll_count == 0);
 
     const std::vector<std::string> expected_events = {
@@ -225,17 +280,17 @@ void test_display_init_failure_skips_render_and_unwinds_exit_lock() {
 
 void test_applet_exit_request_closes_cleanly() {
     FakePlatformServices fake;
-    fake.frames = {
-        InputSnapshot{false, false, false},
-    };
+    FakeLanguageService lang;
+    InputSnapshot stop;
+    stop.applet_running = false;
+    fake.frames = {stop};
 
-    kailocale::AppShell shell(fake);
+    kailocale::AppShell shell(fake, lang);
     const ShellOutcome outcome = shell.run();
 
     CHECK(outcome.reason == kailocale::ExitReason::AppletExit);
     CHECK(outcome.succeeded());
-    CHECK(fake.rendered.size() == 1);
-    CHECK(fake.rendered[0].kind == ShellScreenKind::Ready);
+    CHECK(fake.rendered_picker.size() == 1);
 
     const std::vector<std::string> expected_events = {
         "init:exit_lock",
@@ -256,21 +311,23 @@ void test_applet_exit_request_closes_cleanly() {
 
 void test_shared_font_init_failure_still_renders_visible_error_and_exits_on_applet_close() {
     FakePlatformServices fake;
+    FakeLanguageService lang;
     fake.shared_font_result = ServiceResult::failure(0xA502);
-    fake.frames = {
-        InputSnapshot{true, false, true},
-        InputSnapshot{false, false, false},
-    };
+    InputSnapshot res_change;
+    res_change.resolution_changed = true;
+    InputSnapshot stop;
+    stop.applet_running = false;
+    fake.frames = {res_change, stop};
 
-    kailocale::AppShell shell(fake);
+    kailocale::AppShell shell(fake, lang);
     const ShellOutcome outcome = shell.run();
 
     CHECK(outcome.reason == kailocale::ExitReason::InitFailed);
     CHECK(outcome.failed_stage == "shared_font");
     CHECK(outcome.error_code == 0xA502u);
-    CHECK(fake.rendered.size() == 2);
-    CHECK(fake.rendered[0].kind == ShellScreenKind::InitError);
-    CHECK(fake.rendered[1].kind == ShellScreenKind::InitError);
+    CHECK(fake.rendered_status.size() == 2);
+    CHECK(fake.rendered_status[0].kind == ShellScreenKind::InitError);
+    CHECK(fake.rendered_status[1].kind == ShellScreenKind::InitError);
 
     const std::vector<std::string> expected_events = {
         "init:exit_lock",
@@ -289,6 +346,42 @@ void test_shared_font_init_failure_still_renders_visible_error_and_exits_on_appl
     CHECK(fake.events == expected_events);
 }
 
+void test_navigation_dialog_and_service_error_picker_flow_through_app_shell() {
+    FakePlatformServices fake;
+    FakeLanguageService lang;
+    InputSnapshot down;
+    down.nav_down_held = true;
+    InputSnapshot idle;
+    InputSnapshot a;
+    a.a_held = true;
+    InputSnapshot plus;
+    plus.plus_held = true;
+
+    fake.frames = {down, idle, a, idle, a, plus};
+
+    kailocale::AppShell shell(fake, lang);
+    const ShellOutcome outcome = shell.run();
+
+    CHECK(outcome.reason == kailocale::ExitReason::UserPlus);
+    CHECK(fake.rendered_picker.size() == 4);
+    CHECK(fake.rendered_picker[0].focused_index == 1u); // en-US
+    CHECK(fake.rendered_picker[1].focused_index == 2u); // moved to zh-Hans
+    CHECK(fake.rendered_picker[2].screen == PickerScreen::ConfirmDialog);
+    CHECK(fake.rendered_picker[3].screen == PickerScreen::List);
+    CHECK(fake.rendered_picker[3].applied_code == pack_language_code("en-US"));
+
+    FakePlatformServices err_fake;
+    FakeLanguageService err_lang;
+    err_lang.current_result = {ServiceResult::failure(0x3133), 0ULL};
+    err_fake.frames = {plus};
+    kailocale::AppShell err_shell(err_fake, err_lang);
+    const ShellOutcome err_outcome = err_shell.run();
+    CHECK(err_outcome.reason == kailocale::ExitReason::UserPlus);
+    CHECK(err_fake.rendered_picker.size() == 1);
+    CHECK(err_fake.rendered_picker[0].screen == PickerScreen::Error);
+    CHECK(err_fake.rendered_picker[0].error_code == 0x3133u);
+}
+
 } // namespace
 
 int main() {
@@ -299,10 +392,11 @@ int main() {
     const TestCase cases[] = {
         {"clean_startup_plus_exit_and_reverse_teardown", test_clean_startup_plus_exit_and_reverse_teardown},
         {"setsys_init_failure_renders_visible_error_and_tears_down_acquired_subset", test_setsys_init_failure_renders_visible_error_and_tears_down_acquired_subset},
-        {"resolution_change_resizes_and_rerenders_ready_screen", test_resolution_change_resizes_and_rerenders_ready_screen},
+        {"resolution_change_resizes_and_rerenders_picker_only_when_dirty", test_resolution_change_resizes_and_rerenders_picker_only_when_dirty},
         {"display_init_failure_skips_render_and_unwinds_exit_lock", test_display_init_failure_skips_render_and_unwinds_exit_lock},
         {"applet_exit_request_closes_cleanly", test_applet_exit_request_closes_cleanly},
         {"shared_font_init_failure_still_renders_visible_error_and_exits_on_applet_close", test_shared_font_init_failure_still_renders_visible_error_and_exits_on_applet_close},
+        {"navigation_dialog_and_service_error_picker_flow_through_app_shell", test_navigation_dialog_and_service_error_picker_flow_through_app_shell},
     };
 
     int passed = 0;
