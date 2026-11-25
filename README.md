@@ -11,6 +11,12 @@ The project is still experimental. KaiLocale works completely offline, installs 
 - **Multilingual rendering:** Displays Latin, Cyrillic, Japanese, Korean, Simplified Chinese, Traditional Chinese, and Thai autonyms via `pl:u` shared system fonts and bundled OFL-1.1 Noto fallbacks.
 - **Safe confirmation & readback:** Read-only while browsing, no-op when selecting the active language, and verifies applied changes via `setGetLanguageCode()` readback.
 
+## Screenshots
+
+| Language List (Dark) | Confirmation Dialog (Dark) | Confirmation Dialog (Light, 中文) |
+|---|---|---|
+| ![Language list in dark theme](docs/images/list-dark.png) | ![Confirmation dialog in dark theme](docs/images/confirm-dark.png) | ![Confirmation dialog in light theme with Chinese UI](docs/images/confirm-light-zh.png) |
+
 ## Requirements
 
 - Nintendo Switch 2 kaiHEN (verified on firmware `23.0.1`, `kaiHEN 20261117.1`)
