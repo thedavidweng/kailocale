@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "kailocale/language_picker.hpp"
+
 namespace kailocale {
 
 namespace {
@@ -29,14 +31,17 @@ struct LoopResult {
     std::uint32_t error_code = 0;
 };
 
-LoopResult wait_for_exit_or_resize(PlatformServices& platform, const ShellView& view) {
+LoopResult wait_for_error_exit(PlatformServices& platform, const ShellView& view) {
     platform.render_status(view);
+    bool prev_plus = false;
     for (;;) {
         const InputSnapshot snap = platform.poll_frame();
         if (!snap.applet_running) {
             return {LoopExit::AppletExit, 0};
         }
-        if (snap.plus_pressed) {
+        const bool plus_down = snap.plus_held && !prev_plus && !snap.boundary_reset;
+        prev_plus = snap.plus_held;
+        if (plus_down) {
             return {LoopExit::UserPlus, 0};
         }
         if (snap.resolution_changed) {
@@ -49,9 +54,51 @@ LoopResult wait_for_exit_or_resize(PlatformServices& platform, const ShellView& 
     }
 }
 
+LoopResult run_picker_loop(PlatformServices& platform, LanguageService& language_service) {
+    LanguagePicker picker(language_service, platform.viewport_width(), platform.viewport_height());
+    platform.render_picker(picker.view());
+
+    for (;;) {
+        const InputSnapshot snap = platform.poll_frame();
+        if (!snap.applet_running) {
+            return {LoopExit::AppletExit, 0};
+        }
+
+        bool resized = false;
+        if (snap.resolution_changed) {
+            const ServiceResult resize_res = platform.resize_display();
+            if (!resize_res.ok) {
+                return {LoopExit::ResizeFailed, resize_res.code};
+            }
+            resized = true;
+        }
+
+        PickerInput input;
+        input.applet_running = snap.applet_running;
+        input.nav_up_held = snap.nav_up_held;
+        input.nav_down_held = snap.nav_down_held;
+        input.a_held = snap.a_held;
+        input.b_held = snap.b_held;
+        input.plus_held = snap.plus_held;
+        input.boundary_reset = snap.boundary_reset;
+        input.viewport_width = platform.viewport_width();
+        input.viewport_height = platform.viewport_height();
+        input.touch = snap.touch;
+
+        const PickerStepResult step_res = picker.step(input);
+        if (step_res.exit_requested) {
+            return {LoopExit::UserPlus, 0};
+        }
+        if (step_res.dirty || resized) {
+            platform.render_picker(picker.view());
+        }
+    }
+}
+
 } // namespace
 
-AppShell::AppShell(PlatformServices& platform) : platform_(platform) {}
+AppShell::AppShell(PlatformServices& platform, LanguageService& language_service)
+    : platform_(platform), language_service_(language_service) {}
 
 ShellOutcome AppShell::run() {
     ScopedTeardowns teardowns{platform_, {}};
@@ -80,7 +127,7 @@ ShellOutcome AppShell::run() {
                 err_view.kind = ShellScreenKind::InitError;
                 err_view.stage = step.name;
                 err_view.error_code = res.code;
-                (void)wait_for_exit_or_resize(platform_, err_view);
+                (void)wait_for_error_exit(platform_, err_view);
             }
             return ShellOutcome{ExitReason::InitFailed, step.name, res.code};
         }
@@ -90,10 +137,7 @@ ShellOutcome AppShell::run() {
         }
     }
 
-    ShellView ready_view;
-    ready_view.kind = ShellScreenKind::Ready;
-    ready_view.stage = "read-only";
-    const LoopResult loop = wait_for_exit_or_resize(platform_, ready_view);
+    const LoopResult loop = run_picker_loop(platform_, language_service_);
     if (loop.exit == LoopExit::ResizeFailed) {
         return ShellOutcome{ExitReason::InitFailed, "display_resize", loop.error_code};
     }
