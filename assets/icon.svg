@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#2DD4BF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Full-bleed background for Switch hbmenu 256x256 JPEG card -->
+  <rect width="256" height="256" fill="url(#bg)"/>
+
+  <!-- Subtle outer ring -->
+  <circle cx="128" cy="128" r="92" fill="none" stroke="#334155" stroke-width="3"/>
+
+  <!-- Geometric globe -->
+  <circle cx="128" cy="128" r="64" fill="none" stroke="url(#accent)" stroke-width="7"/>
+  <ellipse cx="128" cy="128" rx="30" ry="64" fill="none" stroke="url(#accent)" stroke-width="5.5"/>
+  <line x1="64" y1="128" x2="192" y2="128" stroke="url(#accent)" stroke-width="5.5"/>
+  <path d="M74 96 Q128 110 182 96" fill="none" stroke="url(#accent)" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M74 160 Q128 146 182 160" fill="none" stroke="url(#accent)" stroke-width="4.5" stroke-linecap="round"/>
+
+  <!-- Bidirectional swap arcs around the globe -->
+  <path d="M52 86 A86 86 0 0 1 176 54" fill="none" stroke="#F8FAFC" stroke-width="6" stroke-linecap="round"/>
+  <polygon points="186,60 165,45 169,66" fill="#F8FAFC"/>
+
+  <path d="M204 170 A86 86 0 0 1 80 202" fill="none" stroke="#F8FAFC" stroke-width="6" stroke-linecap="round"/>
+  <polygon points="70,196 91,211 87,190" fill="#F8FAFC"/>
+
+  <!-- Central locale indicator dot -->
+  <circle cx="128" cy="128" r="9" fill="#F8FAFC"/>
+</svg>
