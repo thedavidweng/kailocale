@@ -75,7 +75,7 @@ struct PickerInput {
 
 struct PickerView {
     const char* app_name = "KaiLocale";
-    const char* app_version = "0.1.0";
+    const char* app_version = "0.1.1";
     PickerScreen screen = PickerScreen::List;
     SystemTheme theme = SystemTheme::Dark;
     ThemePalette palette{};

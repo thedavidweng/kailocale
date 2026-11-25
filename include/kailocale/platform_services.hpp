@@ -14,7 +14,7 @@ enum class ShellScreenKind {
 struct ShellView {
     ShellScreenKind kind = ShellScreenKind::InitError;
     const char* app_name = "KaiLocale";
-    const char* app_version = "0.1.0";
+    const char* app_version = "0.1.1";
     std::string stage;
     std::uint32_t error_code = 0;
 };

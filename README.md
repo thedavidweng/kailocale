@@ -27,7 +27,7 @@ The project is still experimental. KaiLocale works completely offline, installs 
 
 ## Installation
 
-1. Download `KaiLocale-v0.1.0-sd.zip` (or `KaiLocale.nro`) and `SHA256SUMS` from the [latest release](https://github.com/thedavidweng/kailocale/releases), and optionally verify with `sha256sum -c SHA256SUMS`.
+1. Download `KaiLocale-v0.1.1-sd.zip` (or `KaiLocale.nro`) and `SHA256SUMS` from the [latest release](https://github.com/thedavidweng/kailocale/releases), and optionally verify with `sha256sum -c SHA256SUMS`.
 2. Extract the archive to the root of your SD card—or copy `KaiLocale.nro` directly—so it sits at `sdmc:/switch/KaiLocale/KaiLocale.nro`.
 3. Start kaiHEN, open `hbmenu`, and launch KaiLocale.
 

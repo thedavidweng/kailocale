@@ -3,7 +3,7 @@
 TARGET		:=	KaiLocale
 APP_TITLE	:=	KaiLocale
 APP_AUTHOR	:=	thedavidweng
-APP_VERSION	:=	0.1.0
+APP_VERSION	:=	0.1.1
 ICON		:=	assets/icon.jpg
 
 BUILD		:=	build

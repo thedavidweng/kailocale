@@ -190,13 +190,16 @@ assert icon_size > 0 and icon_off + icon_size <= len(aset), "Invalid ASET icon s
 assert nacp_size >= 0x4000 and nacp_off + nacp_size <= len(aset), "Invalid ASET NACP section"
 
 # 5. Verify NACP metadata (entry 0 title & author + display_version at 0x3060)
+import json as _json
+with open("UPSTREAM.json", "r", encoding="utf-8") as _uf:
+    expected_version = _json.load(_uf)["version"]
 nacp = aset[nacp_off:nacp_off + nacp_size]
 title = nacp[0x000:0x200].split(b"\x00", 1)[0].decode("utf-8")
 author = nacp[0x200:0x300].split(b"\x00", 1)[0].decode("utf-8")
 version = nacp[0x3060:0x3070].split(b"\x00", 1)[0].decode("utf-8")
 assert title == "KaiLocale", f"Unexpected NACP title: {title!r}"
 assert author == "thedavidweng", f"Unexpected NACP author: {author!r}"
-assert version == "0.1.0", f"Unexpected NACP version: {version!r}"
+assert version == expected_version, f"Unexpected NACP version: {version!r} (expected {expected_version!r})"
 
 # 6. Verify embedded icon is 256x256 baseline (SOF0) 3-component JPEG
 icon = aset[icon_off:icon_off + icon_size]

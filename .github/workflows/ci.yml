@@ -34,10 +34,12 @@ jobs:
       - name: Package and verify release artifacts
         run: |
           make release
-          unzip -l dist/release/KaiLocale-v0.1.0-sd.zip
+          VERSION="$(python3 -c 'import json; print(json.load(open("UPSTREAM.json"))["version"])')"
+          unzip -l "dist/release/KaiLocale-v${VERSION}-sd.zip"
           python3 - << 'PY'
-          import zipfile
-          with zipfile.ZipFile("dist/release/KaiLocale-v0.1.0-sd.zip", "r") as zf:
+          import json, zipfile
+          ver = json.load(open("UPSTREAM.json"))["version"]
+          with zipfile.ZipFile(f"dist/release/KaiLocale-v{ver}-sd.zip", "r") as zf:
               assert zf.namelist() == ["switch/KaiLocale/KaiLocale.nro"]
           PY
           (cd dist/release && sha256sum -c SHA256SUMS)

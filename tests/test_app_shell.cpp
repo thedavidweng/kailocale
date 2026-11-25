@@ -175,7 +175,7 @@ void test_clean_startup_plus_exit_and_reverse_teardown() {
     CHECK(fake.rendered_picker.size() == 1);
     CHECK(fake.rendered_picker[0].screen == PickerScreen::List);
     CHECK(std::string(fake.rendered_picker[0].app_name) == "KaiLocale");
-    CHECK(std::string(fake.rendered_picker[0].app_version) == "0.1.0");
+    CHECK(std::string(fake.rendered_picker[0].app_version) == "0.1.1");
 
     const std::vector<std::string> expected_events = {
         "init:exit_lock",

@@ -34,10 +34,10 @@ Hardware verification is recorded in [`docs/device-acceptance.md`](device-accept
 Running `make host-test`, `make docker-build`, and `make release` produces:
 
 - `dist/release/KaiLocale.nro` — Stripped Release Switch 2 NRO (`OUN0 platform=2`).
-- `dist/release/KaiLocale-v0.1.0-sd.zip` — Canonical SD archive (`switch/KaiLocale/KaiLocale.nro`).
+- `dist/release/KaiLocale-v0.1.1-sd.zip` — Canonical SD archive (`switch/KaiLocale/KaiLocale.nro`).
 - `dist/release/BUILDINFO.json` — Sanitized build provenance (source commit, pinned container digest, `[ounce]` & portlib versions, artifact hashes).
 - `dist/release/SHA256SUMS` — SHA-256 checksums for release assets.
-- `dist/debug/KaiLocale-v0.1.0.elf` — Unstripped ELF debug symbols retained separately for maintainers.
+- `dist/debug/KaiLocale-v0.1.1.elf` — Unstripped ELF debug symbols retained separately for maintainers.
 
 Pinned dependencies and upstream revisions are recorded in [`UPSTREAM.json`](../UPSTREAM.json). Portlib and font licenses are listed in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
 
