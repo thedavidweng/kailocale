@@ -82,6 +82,10 @@ public:
     } while (false)
 
 void test_layout_scales_cleanly_across_1080p_1440p_4k_with_comfortable_hit_targets() {
+    CHECK(kailocale::scale_px(100, 1080) == 100);
+    CHECK(kailocale::scale_px(100, 2160) == 200);
+    CHECK(kailocale::scale_px(1, 720) == 1);
+
     const PickerLayout l1080 = compute_picker_layout(1920, 1080, 18, 0);
     const PickerLayout l1440 = compute_picker_layout(2560, 1440, 18, 0);
     const PickerLayout l2160 = compute_picker_layout(3840, 2160, 18, 0);
@@ -445,7 +449,7 @@ void test_confirmed_apply_verifies_readback_and_refreshes_indicator_and_ui_langu
     CHECK(res_view.screen == PickerScreen::Result);
     CHECK(res_view.apply_report.outcome == ApplyOutcome::Verified);
     CHECK(res_view.apply_report.target_entry.code == pack_language_code("zh-Hans"));
-    CHECK(res_view.apply_report.actual_code == pack_language_code("zh-Hans"));
+    CHECK(res_view.apply_report.actual_entry.code == pack_language_code("zh-Hans"));
     CHECK(res_view.applied_code == pack_language_code("zh-Hans"));
     CHECK(res_view.active_entry.code == pack_language_code("zh-Hans"));
     CHECK(!res_view.active_missing_from_supported);
@@ -571,7 +575,7 @@ void test_readback_failure_and_mismatch_report_accurately() {
         CHECK(picker.view().screen == PickerScreen::Result);
         CHECK(picker.view().apply_report.outcome == ApplyOutcome::ReadbackMismatch);
         CHECK(picker.view().apply_report.target_entry.code == pack_language_code("zh-Hans"));
-        CHECK(picker.view().apply_report.actual_code == pack_language_code("ja"));
+        CHECK(picker.view().apply_report.actual_entry.code == pack_language_code("ja"));
         CHECK(picker.view().apply_report.actual_entry.tag == "ja");
         CHECK(picker.view().applied_code == pack_language_code("ja"));
         CHECK(picker.view().active_entry.code == pack_language_code("ja"));
@@ -606,7 +610,7 @@ void test_readback_failure_and_mismatch_report_accurately() {
         CHECK(picker.step(idle).dirty);
         CHECK(picker.view().screen == PickerScreen::Result);
         CHECK(picker.view().apply_report.outcome == ApplyOutcome::ReadbackMismatch);
-        CHECK(picker.view().apply_report.actual_code == 0ULL);
+        CHECK(picker.view().apply_report.actual_entry.code == 0ULL);
         CHECK(!picker.view().apply_report.actual_entry.tag.empty());
         CHECK(picker.view().applied_code == pack_language_code("en-US"));
     }
@@ -637,7 +641,7 @@ void test_readback_failure_and_mismatch_report_accurately() {
         CHECK(picker.step(idle).dirty);
         CHECK(picker.view().screen == PickerScreen::Result);
         CHECK(picker.view().apply_report.outcome == ApplyOutcome::ReadbackMismatch);
-        CHECK(picker.view().apply_report.actual_code == 0x0001020304050607ULL);
+        CHECK(picker.view().apply_report.actual_entry.code == 0x0001020304050607ULL);
         CHECK(picker.view().apply_report.actual_entry.tag == "0x0001020304050607");
         CHECK(picker.view().applied_code == 0x0001020304050607ULL);
         CHECK(picker.view().active_missing_from_supported);
@@ -823,6 +827,112 @@ void test_same_session_multiple_switches_and_switch_back() {
     CHECK(picker.step(plus).exit_requested);
 }
 
+void test_frame0_boundary_reset_suppresses_held_a_plus_and_touch_until_release() {
+    FakeLanguageService svc;
+    svc.current_result = {ServiceResult::success(), pack_language_code("ja")};
+    svc.available_result = {ServiceResult::success(), eighteen_horizon_codes()};
+
+    {
+        kailocale::InputSnapshot snap;
+        snap.applet_running = true;
+        snap.nav_down_held = true;
+        snap.a_held = true;
+        snap.boundary_reset = true;
+        snap.touch = {true, 120, 340};
+        const PickerInput converted = PickerInput::from_snapshot(snap, 2560, 1440);
+        CHECK(converted.applet_running);
+        CHECK(!converted.nav_up_held);
+        CHECK(converted.nav_down_held);
+        CHECK(converted.a_held);
+        CHECK(!converted.b_held);
+        CHECK(!converted.plus_held);
+        CHECK(converted.boundary_reset);
+        CHECK(converted.viewport_width == 2560u);
+        CHECK(converted.viewport_height == 1440u);
+        CHECK(converted.touch.active);
+        CHECK(converted.touch.x == 120);
+        CHECK(converted.touch.y == 340);
+    }
+
+    // 1. Held A, Plus, nav_down, and touch on Exit button at Frame 0 (hbmenu launch carryover).
+    {
+        LanguagePicker picker(svc, 1920, 1080);
+        const Rect exit_btn = picker.view().layout.exit_button;
+        PickerInput frame0;
+        frame0.boundary_reset = true;
+        frame0.a_held = true;
+        frame0.plus_held = true;
+        frame0.nav_down_held = true;
+        frame0.touch = {true, exit_btn.x + exit_btn.w / 2, exit_btn.y + exit_btn.h / 2};
+
+        const PickerStepResult r0 = picker.step(frame0);
+        CHECK(!r0.exit_requested);
+        CHECK(!r0.dirty);
+        CHECK(picker.view().screen == PickerScreen::List);
+        CHECK(picker.view().focused_index == 0u);
+
+        // Continuing to hold on Frame 1 (boundary_reset cleared) must still suppress everything.
+        PickerInput frame1 = frame0;
+        frame1.boundary_reset = false;
+        const PickerStepResult r1 = picker.step(frame1);
+        CHECK(!r1.exit_requested);
+        CHECK(!r1.dirty);
+        CHECK(picker.view().screen == PickerScreen::List);
+        CHECK(picker.view().focused_index == 0u);
+
+        // Releasing touch while A and Plus remain held must NOT trigger an Exit tap.
+        PickerInput frame2 = frame1;
+        frame2.touch = {};
+        const PickerStepResult r2 = picker.step(frame2);
+        CHECK(!r2.exit_requested);
+        CHECK(!r2.dirty);
+        CHECK(picker.view().screen == PickerScreen::List);
+
+        // Release all buttons -> still idle, zero writes.
+        PickerInput idle;
+        const PickerStepResult r3 = picker.step(idle);
+        CHECK(!r3.exit_requested);
+        CHECK(!r3.dirty);
+        CHECK(svc.apply_calls.empty());
+
+        // Fresh nav_down moves focus, fresh A opens ConfirmDialog, fresh Plus exits cleanly.
+        PickerInput down;
+        down.nav_down_held = true;
+        CHECK(picker.step(down).dirty);
+        CHECK(picker.view().focused_index == 1u);
+        picker.step(idle);
+
+        PickerInput a;
+        a.a_held = true;
+        CHECK(picker.step(a).dirty);
+        CHECK(picker.view().screen == PickerScreen::ConfirmDialog);
+        picker.step(idle);
+
+        PickerInput plus;
+        plus.plus_held = true;
+        CHECK(picker.step(plus).exit_requested);
+    }
+
+    // 2. Held touch over a non-active list row or Select button on Frame 0 must not select or confirm on release.
+    {
+        LanguagePicker picker(svc, 1920, 1080);
+        const Rect row2 = picker.view().layout.row_rects[2];
+        PickerInput frame0;
+        frame0.boundary_reset = true;
+        frame0.touch = {true, row2.x + row2.w / 2, row2.y + row2.h / 2};
+        CHECK(!picker.step(frame0).dirty);
+
+        PickerInput held = frame0;
+        held.boundary_reset = false;
+        CHECK(!picker.step(held).dirty);
+
+        PickerInput idle;
+        CHECK(!picker.step(idle).dirty);
+        CHECK(picker.view().focused_index == 0u);
+        CHECK(picker.view().screen == PickerScreen::List);
+    }
+}
+
 } // namespace
 
 int main() {
@@ -842,6 +952,7 @@ int main() {
         {"readback_failure_and_mismatch_report_accurately", test_readback_failure_and_mismatch_report_accurately},
         {"applying_and_result_guards_touch_controls_and_abort_before_write", test_applying_and_result_guards_touch_controls_and_abort_before_write},
         {"same_session_multiple_switches_and_switch_back", test_same_session_multiple_switches_and_switch_back},
+        {"frame0_boundary_reset_suppresses_held_a_plus_and_touch_until_release", test_frame0_boundary_reset_suppresses_held_a_plus_and_touch_until_release},
     };
 
     int passed = 0;

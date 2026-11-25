@@ -1,5 +1,6 @@
 #include "kailocale/language_catalog.hpp"
 
+#include <cstdio>
 #include <unordered_set>
 
 namespace kailocale {
@@ -36,8 +37,16 @@ constexpr KnownLanguageSpec kKnownLanguages[] = {
     {pack_language_code("zh-TW"), "zh-TW", "\xE7\xB9\x81\xE9\xAB\x94\xE4\xB8\xAD\xE6\x96\x87 (zh-TW)"},
 };
 
-LanguageEntry make_entry(LanguageCode code, bool system_supported, bool is_active) {
-    const LanguageMetadata meta = describe_language(code);
+} // namespace
+
+LanguageEntry make_language_entry(LanguageCode code, bool system_supported, bool is_active) {
+    LanguageMetadata meta = describe_language(code);
+    if (meta.tag.empty()) {
+        char buf[24] = {};
+        std::snprintf(buf, sizeof(buf), "0x%016llX", static_cast<unsigned long long>(code));
+        meta.tag = buf;
+        meta.native_name = buf;
+    }
     return LanguageEntry{
         code,
         meta.tag,
@@ -47,8 +56,6 @@ LanguageEntry make_entry(LanguageCode code, bool system_supported, bool is_activ
         is_active,
     };
 }
-
-} // namespace
 
 std::string format_language_tag(LanguageCode code) {
     if (code == 0) {
@@ -125,7 +132,7 @@ CatalogBuildResult build_language_catalog(LanguageService& service) {
         if (is_active) {
             result.active_in_supported_list = true;
         }
-        result.entries.push_back(make_entry(raw_code, true, is_active));
+        result.entries.push_back(make_language_entry(raw_code, true, is_active));
     }
 
     if (result.entries.empty()) {
@@ -135,7 +142,7 @@ CatalogBuildResult build_language_catalog(LanguageService& service) {
         return result;
     }
 
-    result.active_entry = make_entry(current.code, result.active_in_supported_list, true);
+    result.active_entry = make_language_entry(current.code, result.active_in_supported_list, true);
     return result;
 }
 

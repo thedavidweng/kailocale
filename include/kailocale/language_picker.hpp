@@ -34,7 +34,6 @@ struct ApplyReport {
     ApplyOutcome outcome = ApplyOutcome::None;
     LanguageEntry target_entry{};
     LanguageEntry actual_entry{};
-    LanguageCode actual_code = 0;
     std::uint32_t error_code = 0;
 };
 
@@ -55,6 +54,23 @@ struct PickerInput {
     std::uint32_t viewport_width = 1920;
     std::uint32_t viewport_height = 1080;
     TouchSample touch{};
+
+    static PickerInput from_snapshot(const InputSnapshot& snap,
+                                     std::uint32_t width,
+                                     std::uint32_t height) {
+        return PickerInput{
+            snap.applet_running,
+            snap.nav_up_held,
+            snap.nav_down_held,
+            snap.a_held,
+            snap.b_held,
+            snap.plus_held,
+            snap.boundary_reset,
+            width,
+            height,
+            snap.touch,
+        };
+    }
 };
 
 struct PickerView {
@@ -108,7 +124,7 @@ private:
     void apply_active_language_state(LanguageCode code);
     void dismiss_result(const PickerInput& input);
     void cancel_dialog();
-    void latch_held_buttons(const PickerInput& input);
+    void reset_inputs_on_transition(const PickerInput& input);
 
     LanguageService& service_;
     PickerView view_{};

@@ -4,13 +4,9 @@
 
 namespace kailocale {
 
-namespace {
-
-int scale_px(int base_at_1080p, std::uint32_t height) {
-    return std::max(1, static_cast<int>((static_cast<long long>(base_at_1080p) * height) / 1080LL));
+int scale_px(int px, std::uint32_t viewport_height) {
+    return std::max(1, static_cast<int>((static_cast<long long>(px) * viewport_height) / 1080LL));
 }
-
-} // namespace
 
 PickerLayout compute_picker_layout(std::uint32_t width,
                                    std::uint32_t height,

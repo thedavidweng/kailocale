@@ -55,6 +55,7 @@ private:
     void close_framebuffer();
 
     PadState pad_{};
+    bool input_initialized_ = false;
     bool was_pad_connected_ = false;
     std::int32_t touch_domain_w_ = 1280;
     std::int32_t touch_domain_h_ = 720;

@@ -189,12 +189,22 @@ ServiceResult Switch2PlatformServices::init_input() {
     }
     hidInitializeTouchScreen();
 
+    HidTouchScreenState initial_touch{};
+    const bool has_initial_touch =
+        hidGetTouchScreenStates(&initial_touch, 1) > 0 && initial_touch.count > 0;
+    if (padGetButtons(&pad_) != 0 || has_initial_touch) {
+        boundary_reset_pending_ = true;
+    }
+
     appletHook(&applet_hook_cookie_, &Switch2PlatformServices::on_applet_hook, this);
     hooks_registered_ = true;
+    input_initialized_ = true;
     return ServiceResult::success();
 }
 
 void Switch2PlatformServices::exit_input() {
+    input_initialized_ = false;
+    was_pad_connected_ = false;
     if (hooks_registered_) {
         appletUnhook(&applet_hook_cookie_);
         hooks_registered_ = false;
@@ -305,16 +315,9 @@ void Switch2PlatformServices::exit_shared_font() {
 
 InputSnapshot Switch2PlatformServices::poll_frame() {
     const bool running = appletMainLoop();
-    padUpdate(&pad_);
 
     InputSnapshot snap;
     snap.applet_running = running;
-
-    const bool connected = padIsConnected(&pad_);
-    if (!was_pad_connected_ && connected) {
-        snap.boundary_reset = true;
-    }
-    was_pad_connected_ = connected;
 
     if (boundary_reset_pending_) {
         snap.boundary_reset = true;
@@ -324,23 +327,35 @@ InputSnapshot Switch2PlatformServices::poll_frame() {
     const bool in_focus = (appletGetFocusState() == AppletFocusState_InFocus);
     if (!in_focus) {
         snap.boundary_reset = true;
-    } else {
-        const u64 held = padGetButtons(&pad_);
-        snap.nav_up_held = (held & (HidNpadButton_Up | HidNpadButton_StickLUp)) != 0;
-        snap.nav_down_held = (held & (HidNpadButton_Down | HidNpadButton_StickLDown)) != 0;
-        snap.a_held = (held & HidNpadButton_A) != 0;
-        snap.b_held = (held & HidNpadButton_B) != 0;
-        snap.plus_held = (held & HidNpadButton_Plus) != 0;
+    }
 
-        HidTouchScreenState touch_state{};
-        if (hidGetTouchScreenStates(&touch_state, 1) > 0 && touch_state.count > 0) {
-            const std::int64_t raw_x = static_cast<std::int64_t>(touch_state.touches[0].x);
-            const std::int64_t raw_y = static_cast<std::int64_t>(touch_state.touches[0].y);
-            const std::int32_t sx = static_cast<std::int32_t>(
-                std::clamp<std::int64_t>((raw_x * fb_width_) / touch_domain_w_, 0, fb_width_ - 1));
-            const std::int32_t sy = static_cast<std::int32_t>(
-                std::clamp<std::int64_t>((raw_y * fb_height_) / touch_domain_h_, 0, fb_height_ - 1));
-            snap.touch = TouchSample{true, sx, sy};
+    if (input_initialized_) {
+        padUpdate(&pad_);
+
+        const bool connected = padIsConnected(&pad_);
+        if (!was_pad_connected_ && connected) {
+            snap.boundary_reset = true;
+        }
+        was_pad_connected_ = connected;
+
+        if (in_focus) {
+            const u64 held = padGetButtons(&pad_);
+            snap.nav_up_held = (held & (HidNpadButton_Up | HidNpadButton_StickLUp)) != 0;
+            snap.nav_down_held = (held & (HidNpadButton_Down | HidNpadButton_StickLDown)) != 0;
+            snap.a_held = (held & HidNpadButton_A) != 0;
+            snap.b_held = (held & HidNpadButton_B) != 0;
+            snap.plus_held = (held & HidNpadButton_Plus) != 0;
+
+            HidTouchScreenState touch_state{};
+            if (hidGetTouchScreenStates(&touch_state, 1) > 0 && touch_state.count > 0) {
+                const std::int64_t raw_x = static_cast<std::int64_t>(touch_state.touches[0].x);
+                const std::int64_t raw_y = static_cast<std::int64_t>(touch_state.touches[0].y);
+                const std::int32_t sx = static_cast<std::int32_t>(
+                    std::clamp<std::int64_t>((raw_x * fb_width_) / touch_domain_w_, 0, fb_width_ - 1));
+                const std::int32_t sy = static_cast<std::int32_t>(
+                    std::clamp<std::int64_t>((raw_y * fb_height_) / touch_domain_h_, 0, fb_height_ - 1));
+                snap.touch = TouchSample{true, sx, sy};
+            }
         }
     }
 

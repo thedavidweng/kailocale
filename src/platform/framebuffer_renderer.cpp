@@ -5,23 +5,17 @@
 #include <cstdlib>
 #include <string>
 
+#include "kailocale/picker_layout.hpp"
+
 namespace kailocale {
 
 namespace {
 
-void fill_rect(std::uint8_t* buffer,
-               std::uint32_t stride,
-               std::uint32_t fb_w,
-               std::uint32_t fb_h,
-               int x,
-               int y,
-               int w,
-               int h,
-               RgbaColor color) {
+void fill_rect(const RenderSurface& surface, int x, int y, int w, int h, RgbaColor color) {
     const int x0 = std::max(0, x);
     const int y0 = std::max(0, y);
-    const int x1 = std::min(static_cast<int>(fb_w), x + w);
-    const int y1 = std::min(static_cast<int>(fb_h), y + h);
+    const int x1 = std::min(static_cast<int>(surface.width), x + w);
+    const int y1 = std::min(static_cast<int>(surface.height), y + h);
     if (x0 >= x1 || y0 >= y1) {
         return;
     }
@@ -29,7 +23,8 @@ void fill_rect(std::uint8_t* buffer,
     if (color.a == 255) {
         const std::uint32_t px_val = color.packed();
         for (int py = y0; py < y1; ++py) {
-            auto* row = reinterpret_cast<std::uint32_t*>(buffer + static_cast<std::size_t>(py) * stride);
+            auto* row = reinterpret_cast<std::uint32_t*>(
+                surface.buffer + static_cast<std::size_t>(py) * surface.stride);
             for (int px = x0; px < x1; ++px) {
                 row[px] = px_val;
             }
@@ -40,7 +35,7 @@ void fill_rect(std::uint8_t* buffer,
     const std::uint32_t a = color.a;
     const std::uint32_t inv = 255u - a;
     for (int py = y0; py < y1; ++py) {
-        auto* row = buffer + static_cast<std::size_t>(py) * stride;
+        auto* row = surface.buffer + static_cast<std::size_t>(py) * surface.stride;
         for (int px = x0; px < x1; ++px) {
             auto* dst = row + static_cast<std::size_t>(px) * 4;
             dst[0] = static_cast<std::uint8_t>((dst[0] * inv + color.r * a) / 255u);
@@ -51,19 +46,11 @@ void fill_rect(std::uint8_t* buffer,
     }
 }
 
-void fill_rect(std::uint8_t* buffer,
-               std::uint32_t stride,
-               std::uint32_t fb_w,
-               std::uint32_t fb_h,
-               const Rect& r,
-               RgbaColor color) {
-    fill_rect(buffer, stride, fb_w, fb_h, r.x, r.y, r.w, r.h, color);
+void fill_rect(const RenderSurface& surface, const Rect& r, RgbaColor color) {
+    fill_rect(surface, r.x, r.y, r.w, r.h, color);
 }
 
-void draw_rect_outline(std::uint8_t* buffer,
-                       std::uint32_t stride,
-                       std::uint32_t fb_w,
-                       std::uint32_t fb_h,
+void draw_rect_outline(const RenderSurface& surface,
                        int x,
                        int y,
                        int w,
@@ -71,34 +58,22 @@ void draw_rect_outline(std::uint8_t* buffer,
                        int thickness,
                        RgbaColor color) {
     const int t = std::max(1, thickness);
-    fill_rect(buffer, stride, fb_w, fb_h, x, y, w, t, color);
-    fill_rect(buffer, stride, fb_w, fb_h, x, y + h - t, w, t, color);
-    fill_rect(buffer, stride, fb_w, fb_h, x, y, t, h, color);
-    fill_rect(buffer, stride, fb_w, fb_h, x + w - t, y, t, h, color);
+    fill_rect(surface, x, y, w, t, color);
+    fill_rect(surface, x, y + h - t, w, t, color);
+    fill_rect(surface, x, y, t, h, color);
+    fill_rect(surface, x + w - t, y, t, h, color);
 }
 
-void draw_rect_outline(std::uint8_t* buffer,
-                       std::uint32_t stride,
-                       std::uint32_t fb_w,
-                       std::uint32_t fb_h,
-                       const Rect& r,
-                       int thickness,
-                       RgbaColor color) {
-    draw_rect_outline(buffer, stride, fb_w, fb_h, r.x, r.y, r.w, r.h, thickness, color);
+void draw_rect_outline(const RenderSurface& surface, const Rect& r, int thickness, RgbaColor color) {
+    draw_rect_outline(surface, r.x, r.y, r.w, r.h, thickness, color);
 }
 
-void blend_pixel(std::uint8_t* buffer,
-                 std::uint32_t stride,
-                 std::uint32_t fb_w,
-                 std::uint32_t fb_h,
-                 int x,
-                 int y,
-                 RgbaColor color,
-                 std::uint8_t coverage) {
-    if (x < 0 || y < 0 || x >= static_cast<int>(fb_w) || y >= static_cast<int>(fb_h) || coverage == 0) {
+void blend_pixel(const RenderSurface& surface, int x, int y, RgbaColor color, std::uint8_t coverage) {
+    if (x < 0 || y < 0 || x >= static_cast<int>(surface.width) || y >= static_cast<int>(surface.height) ||
+        coverage == 0) {
         return;
     }
-    auto* dst = buffer + static_cast<std::size_t>(y) * stride + static_cast<std::size_t>(x) * 4;
+    auto* dst = surface.buffer + static_cast<std::size_t>(y) * surface.stride + static_cast<std::size_t>(x) * 4;
     if (coverage == 255) {
         dst[0] = color.r;
         dst[1] = color.g;
@@ -179,10 +154,7 @@ const std::uint8_t* fallback_glyph_5x7(char ch) {
     return kFallbackBox;
 }
 
-void draw_text_fallback(std::uint8_t* buffer,
-                        std::uint32_t stride,
-                        std::uint32_t fb_w,
-                        std::uint32_t fb_h,
+void draw_text_fallback(const RenderSurface& surface,
                         int x,
                         int y,
                         int scale,
@@ -195,10 +167,7 @@ void draw_text_fallback(std::uint8_t* buffer,
         for (int col = 0; col < 5; ++col) {
             for (int row = 0; row < 7; ++row) {
                 if ((cols[col] & (1u << row)) != 0) {
-                    fill_rect(buffer,
-                              stride,
-                              fb_w,
-                              fb_h,
+                    fill_rect(surface,
                               pen_x + col * px_scale,
                               y + row * px_scale,
                               px_scale,
@@ -221,10 +190,6 @@ ScriptPreference script_pref_for_ui(UiLanguage ui) {
     default:
         return ScriptPreference::Default;
     }
-}
-
-int scale_px(int base_at_1080p, std::uint32_t height) {
-    return std::max(1, static_cast<int>((static_cast<long long>(base_at_1080p) * height) / 1080LL));
 }
 
 } // namespace
@@ -285,78 +250,23 @@ bool FramebufferRenderer::has_any_face() const {
     return false;
 }
 
-int FramebufferRenderer::measure_text_width(std::string_view text,
-                                              int pixel_size,
-                                              ScriptPreference pref) const {
-    if (text.empty()) {
-        return 0;
-    }
-    if (!has_any_face()) {
-        const int px_scale = std::max(2, pixel_size / 8);
-        return static_cast<int>(text.size()) * 6 * px_scale;
+std::vector<FramebufferRenderer::ShapedGlyph> FramebufferRenderer::shape_text(
+    std::string_view text,
+    int pixel_size,
+    ScriptPreference pref) const {
+    std::vector<ShapedGlyph> glyphs;
+    if (text.empty() || !has_any_face()) {
+        return glyphs;
     }
 
     const std::vector<TextRun> runs =
         segment_text_runs(text, pref, &FramebufferRenderer::has_glyph_cb, const_cast<FramebufferRenderer*>(this));
 
-    int total_x = 0;
     for (const TextRun& run : runs) {
         const std::size_t idx = static_cast<std::size_t>(run.slot);
-        FT_Face face = faces_[idx];
-        hb_font_t* hb_font = hb_fonts_[idx];
-        if (face == nullptr || hb_font == nullptr) {
+        if (idx >= faces_.size()) {
             continue;
         }
-        if (FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(pixel_size)) != 0) {
-            continue;
-        }
-        hb_ft_font_changed(hb_font);
-
-        hb_buffer_t* buf = hb_buffer_create();
-        hb_buffer_add_utf32(buf,
-                            run.codepoints.data(),
-                            static_cast<int>(run.codepoints.size()),
-                            0,
-                            static_cast<int>(run.codepoints.size()));
-        hb_buffer_guess_segment_properties(buf);
-        hb_shape(hb_font, buf, nullptr, 0);
-
-        unsigned int glyph_count = 0;
-        const hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(buf, &glyph_count);
-        for (unsigned int i = 0; i < glyph_count; ++i) {
-            total_x += static_cast<int>(pos[i].x_advance >> 6);
-        }
-        hb_buffer_destroy(buf);
-    }
-    return total_x;
-}
-
-void FramebufferRenderer::draw_text(std::uint8_t* buffer,
-                                    std::uint32_t stride,
-                                    int x,
-                                    int baseline_y,
-                                    int pixel_size,
-                                    std::string_view text,
-                                    ScriptPreference pref,
-                                    RgbaColor color,
-                                    int max_width) const {
-    if (text.empty()) {
-        return;
-    }
-    if (!has_any_face()) {
-        const int px_scale = std::max(2, pixel_size / 8);
-        draw_text_fallback(buffer, stride, width_, height_, x, baseline_y - 7 * px_scale, px_scale, text, color);
-        return;
-    }
-
-    const std::vector<TextRun> runs =
-        segment_text_runs(text, pref, &FramebufferRenderer::has_glyph_cb, const_cast<FramebufferRenderer*>(this));
-
-    int pen_x = x;
-    const int x_limit = (max_width > 0) ? (x + max_width) : static_cast<int>(width_);
-
-    for (const TextRun& run : runs) {
-        const std::size_t idx = static_cast<std::size_t>(run.slot);
         FT_Face face = faces_[idx];
         hb_font_t* hb_font = hb_fonts_[idx];
         if (face == nullptr || hb_font == nullptr) {
@@ -379,25 +289,82 @@ void FramebufferRenderer::draw_text(std::uint8_t* buffer,
         unsigned int glyph_count = 0;
         const hb_glyph_info_t* info = hb_buffer_get_glyph_infos(buf, &glyph_count);
         const hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(buf, &glyph_count);
-
-        for (unsigned int i = 0; i < glyph_count; ++i) {
-            const int adv_x = static_cast<int>(pos[i].x_advance >> 6);
-            if (max_width > 0 && pen_x + adv_x > x_limit) {
-                break;
+        if (info != nullptr && pos != nullptr) {
+            glyphs.reserve(glyphs.size() + glyph_count);
+            for (unsigned int i = 0; i < glyph_count; ++i) {
+                // Skip .notdef (glyph index 0) gracefully when no loaded face provides a glyph.
+                if (info[i].codepoint == 0) {
+                    continue;
+                }
+                glyphs.push_back(ShapedGlyph{
+                    face,
+                    info[i].codepoint,
+                    static_cast<int>(pos[i].x_advance >> 6),
+                    static_cast<int>(pos[i].x_offset >> 6),
+                    static_cast<int>(pos[i].y_offset >> 6),
+                });
             }
-            if (FT_Load_Glyph(face, info[i].codepoint, FT_LOAD_RENDER) == 0) {
-                const FT_GlyphSlot slot = face->glyph;
-                const FT_Bitmap& bmp = slot->bitmap;
-                const int gx = pen_x + static_cast<int>(pos[i].x_offset >> 6) + slot->bitmap_left;
-                const int gy = baseline_y - static_cast<int>(pos[i].y_offset >> 6) - slot->bitmap_top;
+        }
+        hb_buffer_destroy(buf);
+    }
+    return glyphs;
+}
+
+int FramebufferRenderer::measure_text_width(std::string_view text,
+                                              int pixel_size,
+                                              ScriptPreference pref) const {
+    if (text.empty()) {
+        return 0;
+    }
+    if (!has_any_face()) {
+        const int px_scale = std::max(2, pixel_size / 8);
+        return static_cast<int>(text.size()) * 6 * px_scale;
+    }
+
+    const std::vector<ShapedGlyph> glyphs = shape_text(text, pixel_size, pref);
+    int total_x = 0;
+    for (const ShapedGlyph& glyph : glyphs) {
+        total_x += glyph.x_advance;
+    }
+    return total_x;
+}
+
+void FramebufferRenderer::draw_text(const RenderSurface& surface,
+                                    int x,
+                                    int baseline_y,
+                                    int pixel_size,
+                                    std::string_view text,
+                                    ScriptPreference pref,
+                                    RgbaColor color,
+                                    int max_width) const {
+    if (text.empty()) {
+        return;
+    }
+    if (!has_any_face()) {
+        const int px_scale = std::max(2, pixel_size / 8);
+        draw_text_fallback(surface, x, baseline_y - 7 * px_scale, px_scale, text, color);
+        return;
+    }
+
+    const std::vector<ShapedGlyph> glyphs = shape_text(text, pixel_size, pref);
+    int pen_x = x;
+    const int x_limit = (max_width > 0) ? (x + max_width) : static_cast<int>(surface.width);
+
+    for (const ShapedGlyph& glyph : glyphs) {
+        if (max_width > 0 && pen_x + glyph.x_advance > x_limit) {
+            break;
+        }
+        if (FT_Load_Glyph(glyph.face, glyph.glyph_index, FT_LOAD_RENDER) == 0) {
+            const FT_GlyphSlot slot = glyph.face->glyph;
+            const FT_Bitmap& bmp = slot->bitmap;
+            if (bmp.buffer != nullptr) {
+                const int gx = pen_x + glyph.x_offset + slot->bitmap_left;
+                const int gy = baseline_y - glyph.y_offset - slot->bitmap_top;
                 for (unsigned int row = 0; row < bmp.rows; ++row) {
                     const std::uint8_t* src_row =
                         bmp.buffer + row * static_cast<unsigned int>(std::abs(bmp.pitch));
                     for (unsigned int col = 0; col < bmp.width; ++col) {
-                        blend_pixel(buffer,
-                                    stride,
-                                    width_,
-                                    height_,
+                        blend_pixel(surface,
                                     gx + static_cast<int>(col),
                                     gy + static_cast<int>(row),
                                     color,
@@ -405,13 +372,78 @@ void FramebufferRenderer::draw_text(std::uint8_t* buffer,
                     }
                 }
             }
-            pen_x += adv_x;
         }
-        hb_buffer_destroy(buf);
-        if (max_width > 0 && pen_x >= x_limit) {
-            break;
-        }
+        pen_x += glyph.x_advance;
     }
+}
+
+void FramebufferRenderer::draw_button(const RenderSurface& surface,
+                                      const Rect& rect,
+                                      const ButtonStyle& style,
+                                      std::string_view label,
+                                      ScriptPreference pref) const {
+    fill_rect(surface, rect, style.bg);
+    if (style.border_thickness > 0) {
+        draw_rect_outline(surface, rect, style.border_thickness, style.border);
+    }
+    const int pad_x = scale_px(12, surface.height);
+    const int label_w = measure_text_width(label, style.pixel_size, pref);
+    const int text_x = rect.x + std::max(pad_x, (rect.w - label_w) / 2);
+    draw_text(surface,
+              text_x,
+              rect.y + style.baseline_offset,
+              style.pixel_size,
+              label,
+              pref,
+              style.text_color,
+              std::max(0, rect.w - pad_x * 2));
+}
+
+void FramebufferRenderer::draw_labeled_language(const RenderSurface& surface,
+                                                int x,
+                                                int y,
+                                                int max_w,
+                                                ScriptPreference ui_pref,
+                                                const std::string& label,
+                                                RgbaColor label_color,
+                                                const LanguageEntry& entry,
+                                                RgbaColor value_color) const {
+    const int sub_px = scale_px(22, surface.height);
+    const int body_px = scale_px(28, surface.height);
+    const std::string prefix = label + ":  ";
+    const int lbl_w = measure_text_width(prefix, sub_px, ui_pref);
+    const std::string val =
+        (entry.native_name == entry.tag) ? entry.tag : (entry.native_name + "  [" + entry.tag + "]");
+    draw_text(surface, x, y, sub_px, prefix, ui_pref, label_color);
+    draw_text(surface,
+              x + lbl_w,
+              y,
+              body_px,
+              val,
+              script_preference_for_tag(entry.tag),
+              value_color,
+              max_w - lbl_w);
+}
+
+void FramebufferRenderer::draw_notice_box(const RenderSurface& surface,
+                                          const Rect& box,
+                                          RgbaColor box_bg,
+                                          RgbaColor box_border,
+                                          RgbaColor text_color,
+                                          std::string_view msg,
+                                          ScriptPreference pref,
+                                          int font_px) const {
+    const int pad_x = scale_px(18, surface.height);
+    fill_rect(surface, box, box_bg);
+    draw_rect_outline(surface, box, scale_px(1, surface.height), box_border);
+    draw_text(surface,
+              box.x + pad_x,
+              box.y + (box.h + font_px) / 2 - scale_px(4, surface.height),
+              font_px,
+              msg,
+              pref,
+              text_color,
+              box.w - pad_x * 2);
 }
 
 void FramebufferRenderer::render_shell_view(std::uint8_t* buffer,
@@ -421,27 +453,26 @@ void FramebufferRenderer::render_shell_view(std::uint8_t* buffer,
         return;
     }
 
-    const bool is_error = (view.kind == ShellScreenKind::InitError);
+    const RenderSurface surface{buffer, stride, width_, height_};
     const ThemePalette& pal = theme_for_system(SystemTheme::Dark);
-    const RgbaColor bg = is_error ? RgbaColor{38, 14, 20, 255} : pal.background;
-    const RgbaColor card_bg = is_error ? RgbaColor{58, 21, 30, 255} : pal.surface;
-    const RgbaColor card_border = is_error ? pal.error_border : pal.accent;
+    const RgbaColor bg{38, 14, 20, 255};
+    const RgbaColor card_bg{58, 21, 30, 255};
 
-    fill_rect(buffer, stride, width_, height_, 0, 0, static_cast<int>(width_), static_cast<int>(height_), bg);
+    fill_rect(surface, 0, 0, static_cast<int>(surface.width), static_cast<int>(surface.height), bg);
 
-    const int margin_x = static_cast<int>(width_ / 10);
-    const int margin_y = static_cast<int>(height_ / 6);
-    const int card_w = static_cast<int>(width_) - 2 * margin_x;
-    const int card_h = static_cast<int>(height_) - 2 * margin_y;
-    const int border = std::max(3, static_cast<int>(height_ / 270));
+    const int margin_x = static_cast<int>(surface.width / 10);
+    const int margin_y = static_cast<int>(surface.height / 6);
+    const int card_w = static_cast<int>(surface.width) - 2 * margin_x;
+    const int card_h = static_cast<int>(surface.height) - 2 * margin_y;
+    const int border = std::max(3, static_cast<int>(surface.height / 270));
 
-    fill_rect(buffer, stride, width_, height_, margin_x, margin_y, card_w, card_h, card_bg);
-    draw_rect_outline(buffer, stride, width_, height_, margin_x, margin_y, card_w, card_h, border, card_border);
+    fill_rect(surface, margin_x, margin_y, card_w, card_h, card_bg);
+    draw_rect_outline(surface, margin_x, margin_y, card_w, card_h, border, pal.error_border);
 
     const int pad_x = margin_x + std::max(40, card_w / 14);
-    const int title_px = scale_px(48, height_);
-    const int body_px = scale_px(30, height_);
-    const int line_step = body_px + scale_px(24, height_);
+    const int title_px = scale_px(48, surface.height);
+    const int body_px = scale_px(30, surface.height);
+    const int line_step = body_px + scale_px(24, surface.height);
 
     const std::string title = std::string(view.app_name) + " v" + view.app_version;
     char detail_line[160] = {};
@@ -452,27 +483,476 @@ void FramebufferRenderer::render_shell_view(std::uint8_t* buffer,
                   view.error_code);
 
     int y = margin_y + std::max(64, card_h / 5);
-    draw_text(buffer, stride, pad_x, y, title_px, title, ScriptPreference::Default, pal.text_primary);
-    y += title_px + scale_px(36, height_);
-    draw_text(buffer,
-              stride,
+    draw_text(surface, pad_x, y, title_px, title, ScriptPreference::Default, pal.text_primary);
+    y += title_px + scale_px(36, surface.height);
+    draw_text(surface,
               pad_x,
               y,
               body_px,
-              is_error ? "Service initialization failed" : "Switch 2 native runtime initialized",
+              "Service initialization failed",
               ScriptPreference::Default,
-              is_error ? pal.error_text : pal.accent);
+              pal.error_text);
     y += line_step;
-    draw_text(buffer, stride, pad_x, y, body_px, detail_line, ScriptPreference::Default, pal.text_secondary);
+    draw_text(surface, pad_x, y, body_px, detail_line, ScriptPreference::Default, pal.text_secondary);
     y += line_step * 2;
-    draw_text(buffer,
-              stride,
+    draw_text(surface,
               pad_x,
               y,
               body_px,
               "Press + (Plus) to exit",
               ScriptPreference::Default,
               pal.text_primary);
+}
+
+void FramebufferRenderer::render_header(const RenderSurface& surface,
+                                        const PickerView& view,
+                                        ScriptPreference ui_pref) const {
+    const ThemePalette& pal = view.palette;
+    const PickerLayout& lay = view.layout;
+    const LocalizedStrings& str = view.strings;
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+
+    fill_rect(surface, lay.header, pal.surface);
+    fill_rect(surface, 0, lay.header.y + lay.header.h - sc(2), lay.header.w, sc(2), pal.divider);
+
+    const int margin_x = lay.banner.x;
+    const int title_px = sc(40);
+    const int sub_px = sc(22);
+    const int body_px = sc(28);
+    const int small_px = sc(21);
+
+    const std::string title = std::string(view.app_name) + "  v" + view.app_version;
+    draw_text(surface, margin_x, sc(58), title_px, title, ScriptPreference::Default, pal.text_primary);
+    draw_text(surface, margin_x, sc(98), sub_px, str.subtitle, ui_pref, pal.text_secondary);
+
+    const int sub_w = measure_text_width(str.subtitle, sub_px, ui_pref);
+    const int pill_w = measure_text_width(str.mode_pill, small_px, ui_pref) + sc(24);
+    const Rect pill_rect{margin_x + sub_w + sc(20), sc(74), pill_w, sc(32)};
+    if (pill_rect.x + pill_rect.w < static_cast<int>(surface.width) / 2) {
+        fill_rect(surface, pill_rect, pal.info_bg);
+        draw_rect_outline(surface, pill_rect, sc(1), pal.info_border);
+        draw_text(surface,
+                  pill_rect.x + sc(12),
+                  pill_rect.y + sc(23),
+                  small_px,
+                  str.mode_pill,
+                  ui_pref,
+                  pal.info_text);
+    }
+
+    if (!view.active_entry.tag.empty()) {
+        const std::string active_prefix = str.current_label + ": ";
+        const int prefix_w = measure_text_width(active_prefix, sub_px, ui_pref);
+        const ScriptPreference active_pref = script_preference_for_tag(view.active_entry.tag);
+        const std::string active_value =
+            view.active_entry.native_name + "  [" + view.active_entry.tag + "]";
+        const int val_w = measure_text_width(active_value, body_px, active_pref);
+        const int pill_pad = sc(24);
+        const int active_pill_w = std::min(static_cast<int>(surface.width) / 2, prefix_w + val_w + pill_pad * 2);
+        const Rect active_pill_rect{
+            static_cast<int>(surface.width) - margin_x - active_pill_w,
+            sc(32),
+            active_pill_w,
+            sc(64),
+        };
+
+        fill_rect(surface, active_pill_rect, pal.row_bg);
+        draw_rect_outline(surface, active_pill_rect, sc(2), pal.applied_badge_bg);
+        draw_text(surface,
+                  active_pill_rect.x + pill_pad,
+                  active_pill_rect.y + sc(42),
+                  sub_px,
+                  active_prefix,
+                  ui_pref,
+                  pal.text_secondary);
+        draw_text(surface,
+                  active_pill_rect.x + pill_pad + prefix_w,
+                  active_pill_rect.y + sc(42),
+                  body_px,
+                  active_value,
+                  active_pref,
+                  pal.text_primary,
+                  active_pill_rect.w - pill_pad * 2 - prefix_w);
+    }
+}
+
+void FramebufferRenderer::render_error_screen(const RenderSurface& surface,
+                                              const PickerView& view,
+                                              ScriptPreference ui_pref) const {
+    const ThemePalette& pal = view.palette;
+    const PickerLayout& lay = view.layout;
+    const LocalizedStrings& str = view.strings;
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+
+    const int card_w = std::min(lay.banner.w, sc(1100));
+    const int card_h = sc(360);
+    const Rect card{(static_cast<int>(surface.width) - card_w) / 2,
+                    (static_cast<int>(surface.height) - card_h) / 2,
+                    card_w,
+                    card_h};
+    fill_rect(surface, card, pal.error_bg);
+    draw_rect_outline(surface, card, sc(3), pal.error_border);
+
+    const int tx = card.x + sc(48);
+    int ty = card.y + sc(78);
+    draw_text(surface, tx, ty, sc(36), str.service_error_title, ui_pref, pal.error_text);
+    ty += sc(56);
+    draw_text(surface, tx, ty, sc(28), str.service_error_detail, ui_pref, pal.text_primary);
+    ty += sc(64);
+    char code_buf[64] = {};
+    std::snprintf(code_buf, sizeof(code_buf), "0x%08X", view.error_code);
+    const std::string detail =
+        str.stage_label + ": " + view.error_stage + "   |   " + str.result_label + ": " + code_buf;
+    draw_text(surface, tx, ty, sc(22), detail, ui_pref, pal.text_secondary);
+}
+
+void FramebufferRenderer::render_list_view(const RenderSurface& surface,
+                                           const PickerView& view,
+                                           ScriptPreference ui_pref) const {
+    const ThemePalette& pal = view.palette;
+    const PickerLayout& lay = view.layout;
+    const LocalizedStrings& str = view.strings;
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+
+    const int sub_px = sc(22);
+    const int body_px = sc(28);
+    const int small_px = sc(21);
+    const int border_px = sc(3);
+
+    if (view.banner_kind != BannerKind::None && !view.banner_text.empty()) {
+        const bool warn = (view.banner_kind == BannerKind::Warning);
+        fill_rect(surface, lay.banner, warn ? pal.warning_bg : pal.info_bg);
+        draw_rect_outline(surface, lay.banner, sc(2), warn ? pal.warning_border : pal.info_border);
+        draw_text(surface,
+                  lay.banner.x + sc(20),
+                  lay.banner.y + sc(34),
+                  sub_px,
+                  view.banner_text,
+                  ui_pref,
+                  warn ? pal.warning_text : pal.info_text,
+                  lay.banner.w - sc(40));
+    }
+
+    draw_text(surface,
+              lay.section_header.x,
+              lay.section_header.y + sc(24),
+              small_px,
+              str.supported_header,
+              ui_pref,
+              pal.text_secondary);
+    if (!view.entries.empty()) {
+        char count_buf[48] = {};
+        std::snprintf(count_buf,
+                      sizeof(count_buf),
+                      "%zu / %zu",
+                      view.focused_index + 1,
+                      view.entries.size());
+        const int cw = measure_text_width(count_buf, small_px, ScriptPreference::Default);
+        draw_text(surface,
+                  lay.list_area.x + lay.list_area.w - cw,
+                  lay.section_header.y + sc(24),
+                  small_px,
+                  count_buf,
+                  ScriptPreference::Default,
+                  pal.text_secondary);
+    }
+
+    for (std::size_t i = 0; i < lay.row_rects.size(); ++i) {
+        const std::size_t idx = lay.scroll_offset + i;
+        if (idx >= view.entries.size()) {
+            break;
+        }
+        const LanguageEntry& entry = view.entries[idx];
+        const Rect& row = lay.row_rects[i];
+        const bool focused = (idx == view.focused_index);
+        const bool applied = (entry.code == view.applied_code);
+
+        fill_rect(surface, row, focused ? pal.focus_bg : pal.row_bg);
+        if (focused) {
+            draw_rect_outline(surface, row, border_px, pal.focus_border);
+            fill_rect(surface, row.x, row.y, sc(8), row.h, pal.focus_border);
+        } else {
+            draw_rect_outline(surface, row, sc(1), pal.divider);
+        }
+
+        const ScriptPreference row_pref = script_preference_for_tag(entry.tag);
+        const int text_baseline = row.y + (row.h + body_px) / 2 - sc(4);
+        const int label_x = row.x + sc(28);
+
+        int right_edge = row.x + row.w - sc(24);
+        if (applied) {
+            const int badge_text_w = measure_text_width(str.applied_badge, small_px, ui_pref);
+            const int badge_w = badge_text_w + sc(28);
+            const int badge_h = sc(36);
+            const Rect badge{right_edge - badge_w, row.y + (row.h - badge_h) / 2, badge_w, badge_h};
+            fill_rect(surface, badge, pal.applied_badge_bg);
+            draw_text(surface,
+                      badge.x + sc(14),
+                      badge.y + sc(25),
+                      small_px,
+                      str.applied_badge,
+                      ui_pref,
+                      pal.applied_badge_text);
+            right_edge = badge.x - sc(20);
+        }
+
+        const int tag_w = measure_text_width(entry.tag, sub_px, ScriptPreference::Default);
+        draw_text(surface,
+                  right_edge - tag_w,
+                  text_baseline,
+                  sub_px,
+                  entry.tag,
+                  ScriptPreference::Default,
+                  pal.text_secondary);
+
+        const int max_name_w = std::max(sc(120), (right_edge - tag_w - sc(24)) - label_x);
+        draw_text(surface,
+                  label_x,
+                  text_baseline,
+                  body_px,
+                  entry.native_name,
+                  row_pref,
+                  pal.text_primary,
+                  max_name_w);
+    }
+
+    if (view.entries.size() > lay.visible_rows && lay.visible_rows > 0) {
+        fill_rect(surface, lay.scrollbar_track, pal.divider);
+        const std::size_t total = view.entries.size();
+        const int thumb_h = std::max(
+            sc(40),
+            static_cast<int>((static_cast<long long>(lay.scrollbar_track.h) * lay.visible_rows) / total));
+        const std::size_t max_scroll = total - lay.visible_rows;
+        const int travel = lay.scrollbar_track.h - thumb_h;
+        const int thumb_y =
+            lay.scrollbar_track.y +
+            (max_scroll > 0 ? static_cast<int>((static_cast<long long>(travel) * lay.scroll_offset) / max_scroll) : 0);
+        fill_rect(surface, lay.scrollbar_track.x, thumb_y, lay.scrollbar_track.w, thumb_h, pal.accent);
+    }
+}
+
+void FramebufferRenderer::render_footer(const RenderSurface& surface,
+                                        const PickerView& view,
+                                        ScriptPreference ui_pref) const {
+    const ThemePalette& pal = view.palette;
+    const PickerLayout& lay = view.layout;
+    const LocalizedStrings& str = view.strings;
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+
+    const int margin_x = lay.banner.x;
+    const int sub_px = sc(22);
+
+    fill_rect(surface, lay.footer, pal.surface);
+    fill_rect(surface, 0, lay.footer.y, lay.footer.w, sc(2), pal.divider);
+
+    const int hint_y = lay.footer.y + sc(56);
+    if (view.screen == PickerScreen::List) {
+        const std::string hints = str.hint_navigate + "     " + str.hint_select + "     " + str.hint_exit;
+        draw_text(surface, margin_x, hint_y, sub_px, hints, ui_pref, pal.text_secondary);
+        draw_button(surface,
+                    lay.select_button,
+                    {pal.button_primary_bg, {}, 0, sub_px, sc(41), pal.button_primary_text},
+                    str.hint_select,
+                    ui_pref);
+    } else if (view.screen == PickerScreen::ConfirmDialog) {
+        const std::string hints = str.hint_confirm + "     " + str.hint_cancel + "     " + str.hint_exit;
+        draw_text(surface, margin_x, hint_y, sub_px, hints, ui_pref, pal.text_secondary);
+    } else if (view.screen == PickerScreen::Applying) {
+        draw_text(surface, margin_x, hint_y, sub_px, str.applying_title, ui_pref, pal.text_secondary);
+    } else if (view.screen == PickerScreen::Result) {
+        const std::string hints = str.hint_continue + "     " + str.hint_exit;
+        draw_text(surface, margin_x, hint_y, sub_px, hints, ui_pref, pal.text_secondary);
+    } else {
+        draw_text(surface, margin_x, hint_y, sub_px, str.hint_exit, ui_pref, pal.text_secondary);
+    }
+
+    if (view.screen == PickerScreen::List ||
+        view.screen == PickerScreen::Result ||
+        view.screen == PickerScreen::Error) {
+        draw_button(surface,
+                    lay.exit_button,
+                    {pal.button_secondary_bg, pal.divider, sc(1), sub_px, sc(41), pal.text_primary},
+                    str.hint_exit,
+                    ui_pref);
+    }
+}
+
+void FramebufferRenderer::render_confirm_dialog(const RenderSurface& surface,
+                                                const PickerView& view,
+                                                ScriptPreference ui_pref) const {
+    const ThemePalette& pal = view.palette;
+    const PickerLayout& lay = view.layout;
+    const LocalizedStrings& str = view.strings;
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+
+    const int body_px = sc(28);
+    const int small_px = sc(21);
+
+    fill_rect(surface, 0, 0, static_cast<int>(surface.width), static_cast<int>(surface.height), pal.modal_scrim);
+    fill_rect(surface, lay.dialog_box, pal.dialog_bg);
+    draw_rect_outline(surface, lay.dialog_box, sc(3), pal.focus_border);
+
+    const LanguageEntry& target = view.entries[view.dialog_target_index];
+    const int dx = lay.dialog_box.x + sc(40);
+    const int max_dw = lay.dialog_box.w - sc(80);
+    int dy = lay.dialog_box.y + sc(66);
+
+    draw_text(surface, dx, dy, sc(34), str.confirm_title, ui_pref, pal.text_primary, max_dw);
+    dy += sc(60);
+
+    draw_labeled_language(
+        surface, dx, dy, max_dw, ui_pref, str.confirm_current_label, pal.text_secondary, view.active_entry, pal.text_primary);
+    dy += sc(52);
+    draw_labeled_language(
+        surface, dx, dy, max_dw, ui_pref, str.confirm_target_label, pal.accent, target, pal.text_primary);
+    dy += sc(48);
+
+    draw_notice_box(
+        surface, Rect{dx, dy, max_dw, sc(54)}, pal.info_bg, pal.info_border, pal.info_text, str.confirm_notice, ui_pref, small_px);
+
+    draw_button(surface,
+                lay.dialog_cancel_button,
+                {pal.button_secondary_bg, pal.divider, sc(2), body_px, sc(48), pal.text_primary},
+                str.cancel_button,
+                ui_pref);
+    draw_button(surface,
+                lay.dialog_confirm_button,
+                {pal.button_primary_bg, {}, 0, body_px, sc(48), pal.button_primary_text},
+                str.confirm_button,
+                ui_pref);
+}
+
+void FramebufferRenderer::render_applying_dialog(const RenderSurface& surface,
+                                                 const PickerView& view,
+                                                 ScriptPreference ui_pref) const {
+    const ThemePalette& pal = view.palette;
+    const PickerLayout& lay = view.layout;
+    const LocalizedStrings& str = view.strings;
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+
+    fill_rect(surface, 0, 0, static_cast<int>(surface.width), static_cast<int>(surface.height), pal.modal_scrim);
+    fill_rect(surface, lay.result_box, pal.dialog_bg);
+    draw_rect_outline(surface, lay.result_box, sc(3), pal.accent);
+
+    const int dx = lay.result_box.x + sc(40);
+    const int max_dw = lay.result_box.w - sc(80);
+    int dy = lay.result_box.y + sc(78);
+
+    draw_text(surface, dx, dy, sc(34), str.applying_title, ui_pref, pal.text_primary, max_dw);
+    dy += sc(66);
+    draw_labeled_language(
+        surface, dx, dy, max_dw, ui_pref, str.confirm_target_label, pal.accent, view.apply_report.target_entry, pal.text_primary);
+    dy += sc(66);
+    draw_notice_box(
+        surface, Rect{dx, dy, max_dw, sc(72)}, pal.info_bg, pal.info_border, pal.info_text, str.applying_detail, ui_pref, sc(22));
+}
+
+void FramebufferRenderer::render_result_dialog(const RenderSurface& surface,
+                                               const PickerView& view,
+                                               ScriptPreference ui_pref) const {
+    const ThemePalette& pal = view.palette;
+    const PickerLayout& lay = view.layout;
+    const LocalizedStrings& str = view.strings;
+    const ApplyReport& rep = view.apply_report;
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+
+    const int sub_px = sc(22);
+    const int body_px = sc(28);
+    const int small_px = sc(21);
+
+    RgbaColor box_border = pal.error_border;
+    const std::string* title_str = &str.result_rejected_title;
+    if (rep.outcome == ApplyOutcome::Verified) {
+        box_border = pal.applied_badge_bg;
+        title_str = &str.result_verified_title;
+    } else if (rep.outcome == ApplyOutcome::ReadbackMismatch) {
+        box_border = pal.warning_border;
+        title_str = &str.result_mismatch_title;
+    } else if (rep.outcome == ApplyOutcome::ReadbackFailed) {
+        box_border = pal.error_border;
+        title_str = &str.result_readback_failed_title;
+    }
+
+    fill_rect(surface, 0, 0, static_cast<int>(surface.width), static_cast<int>(surface.height), pal.modal_scrim);
+    fill_rect(surface, lay.result_box, pal.dialog_bg);
+    draw_rect_outline(surface, lay.result_box, sc(3), box_border);
+    fill_rect(surface, lay.result_box.x, lay.result_box.y, lay.result_box.w, sc(8), box_border);
+
+    const int dx = lay.result_box.x + sc(40);
+    const int max_dw = lay.result_box.w - sc(80);
+    int dy = lay.result_box.y + sc(64);
+
+    draw_text(surface, dx, dy, sc(34), *title_str, ui_pref, pal.text_primary, max_dw);
+    dy += sc(56);
+
+    if (rep.outcome == ApplyOutcome::Verified) {
+        draw_labeled_language(
+            surface, dx, dy, max_dw, ui_pref, str.confirm_target_label, pal.applied_badge_bg, rep.target_entry, pal.text_primary);
+        dy += sc(48);
+
+        const Rect note_box{dx, dy, max_dw, sc(108)};
+        fill_rect(surface, note_box, pal.info_bg);
+        draw_rect_outline(surface, note_box, sc(1), pal.info_border);
+        draw_text(surface,
+                  note_box.x + sc(18),
+                  note_box.y + sc(40),
+                  small_px,
+                  str.result_reopen_apps_note,
+                  ui_pref,
+                  pal.info_text,
+                  note_box.w - sc(36));
+        draw_text(surface,
+                  note_box.x + sc(18),
+                  note_box.y + sc(80),
+                  small_px,
+                  str.result_reboot_note,
+                  ui_pref,
+                  pal.info_text,
+                  note_box.w - sc(36));
+    } else if (rep.outcome == ApplyOutcome::ReadbackMismatch) {
+        draw_labeled_language(
+            surface, dx, dy, max_dw, ui_pref, str.result_expected_label, pal.text_secondary, rep.target_entry, pal.text_primary);
+        dy += sc(48);
+        draw_labeled_language(
+            surface, dx, dy, max_dw, ui_pref, str.result_actual_label, pal.warning_text, rep.actual_entry, pal.text_primary);
+        dy += sc(44);
+        draw_notice_box(surface,
+                        Rect{dx, dy, max_dw, sc(64)},
+                        pal.warning_bg,
+                        pal.warning_border,
+                        pal.warning_text,
+                        str.result_mismatch_detail,
+                        ui_pref,
+                        small_px);
+    } else {
+        draw_labeled_language(
+            surface, dx, dy, max_dw, ui_pref, str.confirm_target_label, pal.text_secondary, rep.target_entry, pal.text_primary);
+        dy += sc(48);
+
+        char code_buf[64] = {};
+        std::snprintf(code_buf, sizeof(code_buf), "0x%08X", rep.error_code);
+        draw_text(surface, dx, dy, sub_px, str.result_label + ": " + code_buf, ui_pref, pal.error_text, max_dw);
+        dy += sc(44);
+
+        const std::string& detail_str =
+            (rep.outcome == ApplyOutcome::ReadbackFailed)
+                ? str.result_readback_failed_detail
+                : str.result_rejected_detail;
+        draw_notice_box(surface,
+                        Rect{dx, dy, max_dw, sc(64)},
+                        pal.error_bg,
+                        pal.error_border,
+                        pal.error_text,
+                        detail_str,
+                        ui_pref,
+                        small_px);
+    }
+
+    draw_button(surface,
+                lay.result_continue_button,
+                {pal.button_primary_bg, {}, 0, body_px, sc(48), pal.button_primary_text},
+                str.result_continue_button,
+                ui_pref);
 }
 
 void FramebufferRenderer::render_picker_view(std::uint8_t* buffer,
@@ -482,505 +962,25 @@ void FramebufferRenderer::render_picker_view(std::uint8_t* buffer,
         return;
     }
 
-    const ThemePalette& pal = view.palette;
-    const PickerLayout& lay = view.layout;
-    const LocalizedStrings& str = view.strings;
-    const ScriptPreference ui_pref = script_pref_for_ui(str.ui_language);
-    const auto sc = [this](int v) { return scale_px(v, height_); };
+    const RenderSurface surface{buffer, stride, width_, height_};
+    const ScriptPreference ui_pref = script_pref_for_ui(view.strings.ui_language);
 
-    fill_rect(buffer, stride, width_, height_, 0, 0, static_cast<int>(width_), static_cast<int>(height_), pal.background);
+    fill_rect(surface, 0, 0, static_cast<int>(surface.width), static_cast<int>(surface.height), view.palette.background);
 
-    // 1. Header bar
-    fill_rect(buffer, stride, width_, height_, lay.header, pal.surface);
-    fill_rect(buffer,
-              stride,
-              width_,
-              height_,
-              0,
-              lay.header.y + lay.header.h - sc(2),
-              lay.header.w,
-              sc(2),
-              pal.divider);
-
-    const int margin_x = lay.banner.x;
-    const int title_px = sc(40);
-    const int sub_px = sc(22);
-    const int body_px = sc(28);
-    const int small_px = sc(21);
-    const int border_px = sc(3);
-
-    const std::string title = std::string(view.app_name) + "  v" + view.app_version;
-    draw_text(buffer, stride, margin_x, sc(58), title_px, title, ScriptPreference::Default, pal.text_primary);
-    draw_text(buffer, stride, margin_x, sc(98), sub_px, str.subtitle, ui_pref, pal.text_secondary);
-
-    // Mode pill next to subtitle
-    const int sub_w = measure_text_width(str.subtitle, sub_px, ui_pref);
-    const int ro_w = measure_text_width(str.mode_pill, small_px, ui_pref) + sc(24);
-    const Rect ro_rect{margin_x + sub_w + sc(20), sc(74), ro_w, sc(32)};
-    if (ro_rect.x + ro_rect.w < static_cast<int>(width_) / 2) {
-        fill_rect(buffer, stride, width_, height_, ro_rect, pal.info_bg);
-        draw_rect_outline(buffer, stride, width_, height_, ro_rect, sc(1), pal.info_border);
-        draw_text(buffer,
-                  stride,
-                  ro_rect.x + sc(12),
-                  ro_rect.y + sc(23),
-                  small_px,
-                  str.mode_pill,
-                  ui_pref,
-                  pal.info_text);
-    }
-
-    // Active language pill on the right side of header
-    if (!view.active_entry.tag.empty()) {
-        const std::string active_prefix = str.current_label + ": ";
-        const int prefix_w = measure_text_width(active_prefix, sub_px, ui_pref);
-        const ScriptPreference active_pref = script_preference_for_tag(view.active_entry.tag);
-        const std::string active_value =
-            view.active_entry.native_name + "  [" + view.active_entry.tag + "]";
-        const int val_w = measure_text_width(active_value, body_px, active_pref);
-        const int pill_pad = sc(24);
-        const int pill_w = std::min(static_cast<int>(width_) / 2, prefix_w + val_w + pill_pad * 2);
-        const Rect pill{static_cast<int>(width_) - margin_x - pill_w, sc(32), pill_w, sc(64)};
-
-        fill_rect(buffer, stride, width_, height_, pill, pal.row_bg);
-        draw_rect_outline(buffer, stride, width_, height_, pill, sc(2), pal.applied_badge_bg);
-        draw_text(buffer,
-                  stride,
-                  pill.x + pill_pad,
-                  pill.y + sc(42),
-                  sub_px,
-                  active_prefix,
-                  ui_pref,
-                  pal.text_secondary);
-        draw_text(buffer,
-                  stride,
-                  pill.x + pill_pad + prefix_w,
-                  pill.y + sc(42),
-                  body_px,
-                  active_value,
-                  active_pref,
-                  pal.text_primary,
-                  pill.w - pill_pad * 2 - prefix_w);
-    }
-
-    // 2. Error Screen (when service read fails or supported list empty)
+    render_header(surface, view, ui_pref);
     if (view.screen == PickerScreen::Error) {
-        const int card_w = std::min(lay.banner.w, sc(1100));
-        const int card_h = sc(360);
-        const Rect card{(static_cast<int>(width_) - card_w) / 2,
-                        (static_cast<int>(height_) - card_h) / 2,
-                        card_w,
-                        card_h};
-        fill_rect(buffer, stride, width_, height_, card, pal.error_bg);
-        draw_rect_outline(buffer, stride, width_, height_, card, border_px, pal.error_border);
-
-        const int tx = card.x + sc(48);
-        int ty = card.y + sc(78);
-        draw_text(buffer, stride, tx, ty, sc(36), str.service_error_title, ui_pref, pal.error_text);
-        ty += sc(56);
-        draw_text(buffer, stride, tx, ty, body_px, str.service_error_detail, ui_pref, pal.text_primary);
-        ty += sc(64);
-        char code_buf[64] = {};
-        std::snprintf(code_buf, sizeof(code_buf), "0x%08X", view.error_code);
-        const std::string detail =
-            str.stage_label + ": " + view.error_stage + "   |   " + str.result_label + ": " + code_buf;
-        draw_text(buffer, stride, tx, ty, sub_px, detail, ui_pref, pal.text_secondary);
+        render_error_screen(surface, view, ui_pref);
     } else {
-        // 3. Banner (warning/info)
-        if (view.banner_kind != BannerKind::None && !view.banner_text.empty()) {
-            const bool warn = (view.banner_kind == BannerKind::Warning);
-            fill_rect(buffer, stride, width_, height_, lay.banner, warn ? pal.warning_bg : pal.info_bg);
-            draw_rect_outline(buffer,
-                              stride,
-                              width_,
-                              height_,
-                              lay.banner,
-                              sc(2),
-                              warn ? pal.warning_border : pal.info_border);
-            draw_text(buffer,
-                      stride,
-                      lay.banner.x + sc(20),
-                      lay.banner.y + sc(34),
-                      sub_px,
-                      view.banner_text,
-                      ui_pref,
-                      warn ? pal.warning_text : pal.info_text,
-                      lay.banner.w - sc(40));
-        }
-
-        // 4. Section header & position counter
-        draw_text(buffer,
-                  stride,
-                  lay.section_header.x,
-                  lay.section_header.y + sc(24),
-                  small_px,
-                  str.supported_header,
-                  ui_pref,
-                  pal.text_secondary);
-        if (!view.entries.empty()) {
-            char count_buf[48] = {};
-            std::snprintf(count_buf,
-                          sizeof(count_buf),
-                          "%zu / %zu",
-                          view.focused_index + 1,
-                          view.entries.size());
-            const int cw = measure_text_width(count_buf, small_px, ScriptPreference::Default);
-            draw_text(buffer,
-                      stride,
-                      lay.list_area.x + lay.list_area.w - cw,
-                      lay.section_header.y + sc(24),
-                      small_px,
-                      count_buf,
-                      ScriptPreference::Default,
-                      pal.text_secondary);
-        }
-
-        // 5. Scrollable language rows
-        for (std::size_t i = 0; i < lay.row_rects.size(); ++i) {
-            const std::size_t idx = lay.scroll_offset + i;
-            if (idx >= view.entries.size()) {
-                break;
-            }
-            const LanguageEntry& entry = view.entries[idx];
-            const Rect& row = lay.row_rects[i];
-            const bool focused = (idx == view.focused_index);
-            const bool applied = (entry.code == view.applied_code);
-
-            fill_rect(buffer, stride, width_, height_, row, focused ? pal.focus_bg : pal.row_bg);
-            if (focused) {
-                draw_rect_outline(buffer, stride, width_, height_, row, border_px, pal.focus_border);
-                fill_rect(buffer, stride, width_, height_, row.x, row.y, sc(8), row.h, pal.focus_border);
-            } else {
-                draw_rect_outline(buffer, stride, width_, height_, row, sc(1), pal.divider);
-            }
-
-            const ScriptPreference row_pref = script_preference_for_tag(entry.tag);
-            const int text_baseline = row.y + (row.h + body_px) / 2 - sc(4);
-            const int label_x = row.x + sc(28);
-
-            // Right-aligned tag and applied badge
-            int right_edge = row.x + row.w - sc(24);
-            if (applied) {
-                const int badge_text_w = measure_text_width(str.applied_badge, small_px, ui_pref);
-                const int badge_w = badge_text_w + sc(28);
-                const int badge_h = sc(36);
-                const Rect badge{right_edge - badge_w, row.y + (row.h - badge_h) / 2, badge_w, badge_h};
-                fill_rect(buffer, stride, width_, height_, badge, pal.applied_badge_bg);
-                draw_text(buffer,
-                          stride,
-                          badge.x + sc(14),
-                          badge.y + sc(25),
-                          small_px,
-                          str.applied_badge,
-                          ui_pref,
-                          pal.applied_badge_text);
-                right_edge = badge.x - sc(20);
-            }
-
-            const int tag_w = measure_text_width(entry.tag, sub_px, ScriptPreference::Default);
-            draw_text(buffer,
-                      stride,
-                      right_edge - tag_w,
-                      text_baseline,
-                      sub_px,
-                      entry.tag,
-                      ScriptPreference::Default,
-                      pal.text_secondary);
-
-            const int max_name_w = std::max(sc(120), (right_edge - tag_w - sc(24)) - label_x);
-            draw_text(buffer,
-                      stride,
-                      label_x,
-                      text_baseline,
-                      body_px,
-                      entry.native_name,
-                      row_pref,
-                      pal.text_primary,
-                      max_name_w);
-        }
-
-        // 6. Scrollbar thumb when list exceeds viewport
-        if (view.entries.size() > lay.visible_rows && lay.visible_rows > 0) {
-            fill_rect(buffer, stride, width_, height_, lay.scrollbar_track, pal.divider);
-            const std::size_t total = view.entries.size();
-            const int thumb_h = std::max(
-                sc(40),
-                static_cast<int>((static_cast<long long>(lay.scrollbar_track.h) * lay.visible_rows) / total));
-            const std::size_t max_scroll = total - lay.visible_rows;
-            const int travel = lay.scrollbar_track.h - thumb_h;
-            const int thumb_y =
-                lay.scrollbar_track.y +
-                (max_scroll > 0 ? static_cast<int>((static_cast<long long>(travel) * lay.scroll_offset) / max_scroll) : 0);
-            fill_rect(buffer,
-                      stride,
-                      width_,
-                      height_,
-                      lay.scrollbar_track.x,
-                      thumb_y,
-                      lay.scrollbar_track.w,
-                      thumb_h,
-                      pal.accent);
-        }
+        render_list_view(surface, view, ui_pref);
     }
+    render_footer(surface, view, ui_pref);
 
-    // 7. Footer bar with contextual Nintendo button hints + touchable action pills
-    fill_rect(buffer, stride, width_, height_, lay.footer, pal.surface);
-    fill_rect(buffer, stride, width_, height_, 0, lay.footer.y, lay.footer.w, sc(2), pal.divider);
-
-    const int hint_y = lay.footer.y + sc(56);
-    if (view.screen == PickerScreen::List) {
-        const std::string hints = str.hint_navigate + "     " + str.hint_select + "     " + str.hint_exit;
-        draw_text(buffer, stride, margin_x, hint_y, sub_px, hints, ui_pref, pal.text_secondary);
-
-        fill_rect(buffer, stride, width_, height_, lay.select_button, pal.button_primary_bg);
-        const int sw = measure_text_width(str.hint_select, sub_px, ui_pref);
-        draw_text(buffer,
-                  stride,
-                  lay.select_button.x + std::max(sc(12), (lay.select_button.w - sw) / 2),
-                  lay.select_button.y + sc(41),
-                  sub_px,
-                  str.hint_select,
-                  ui_pref,
-                  pal.button_primary_text,
-                  lay.select_button.w - sc(24));
-    } else if (view.screen == PickerScreen::ConfirmDialog) {
-        const std::string hints = str.hint_confirm + "     " + str.hint_cancel + "     " + str.hint_exit;
-        draw_text(buffer, stride, margin_x, hint_y, sub_px, hints, ui_pref, pal.text_secondary);
-    } else if (view.screen == PickerScreen::Applying) {
-        draw_text(buffer, stride, margin_x, hint_y, sub_px, str.applying_title, ui_pref, pal.text_secondary);
-    } else if (view.screen == PickerScreen::Result) {
-        const std::string hints = str.hint_continue + "     " + str.hint_exit;
-        draw_text(buffer, stride, margin_x, hint_y, sub_px, hints, ui_pref, pal.text_secondary);
-    } else {
-        draw_text(buffer, stride, margin_x, hint_y, sub_px, str.hint_exit, ui_pref, pal.text_secondary);
-    }
-
-    if (view.screen == PickerScreen::List ||
-        view.screen == PickerScreen::Result ||
-        view.screen == PickerScreen::Error) {
-        fill_rect(buffer, stride, width_, height_, lay.exit_button, pal.button_secondary_bg);
-        draw_rect_outline(buffer, stride, width_, height_, lay.exit_button, sc(1), pal.divider);
-        const int ew = measure_text_width(str.hint_exit, sub_px, ui_pref);
-        draw_text(buffer,
-                  stride,
-                  lay.exit_button.x + std::max(sc(12), (lay.exit_button.w - ew) / 2),
-                  lay.exit_button.y + sc(41),
-                  sub_px,
-                  str.hint_exit,
-                  ui_pref,
-                  pal.text_primary,
-                  lay.exit_button.w - sc(24));
-    }
-
-    const auto draw_labeled_language = [&](int x,
-                                           int y,
-                                           int max_w,
-                                           const std::string& label,
-                                           RgbaColor label_color,
-                                           const LanguageEntry& entry) {
-        const std::string prefix = label + ":  ";
-        const int lbl_w = measure_text_width(prefix, sub_px, ui_pref);
-        const std::string val =
-            (entry.native_name == entry.tag) ? entry.tag : (entry.native_name + "  [" + entry.tag + "]");
-        draw_text(buffer, stride, x, y, sub_px, prefix, ui_pref, label_color);
-        draw_text(buffer,
-                  stride,
-                  x + lbl_w,
-                  y,
-                  body_px,
-                  val,
-                  script_preference_for_tag(entry.tag),
-                  pal.text_primary,
-                  max_w - lbl_w);
-    };
-
-    const auto draw_notice_box = [&](const Rect& box,
-                                     RgbaColor box_bg,
-                                     RgbaColor box_border,
-                                     RgbaColor text_color,
-                                     const std::string& msg,
-                                     int font_px) {
-        fill_rect(buffer, stride, width_, height_, box, box_bg);
-        draw_rect_outline(buffer, stride, width_, height_, box, sc(1), box_border);
-        draw_text(buffer,
-                  stride,
-                  box.x + sc(18),
-                  box.y + (box.h + font_px) / 2 - sc(4),
-                  font_px,
-                  msg,
-                  ui_pref,
-                  text_color,
-                  box.w - sc(36));
-    };
-
-    // 8. Confirmation Dialog Overlay
     if (view.screen == PickerScreen::ConfirmDialog && view.dialog_target_index < view.entries.size()) {
-        fill_rect(buffer, stride, width_, height_, 0, 0, static_cast<int>(width_), static_cast<int>(height_), pal.modal_scrim);
-        fill_rect(buffer, stride, width_, height_, lay.dialog_box, pal.dialog_bg);
-        draw_rect_outline(buffer, stride, width_, height_, lay.dialog_box, border_px, pal.focus_border);
-
-        const LanguageEntry& target = view.entries[view.dialog_target_index];
-        const int dx = lay.dialog_box.x + sc(40);
-        const int max_dw = lay.dialog_box.w - sc(80);
-        int dy = lay.dialog_box.y + sc(66);
-
-        draw_text(buffer, stride, dx, dy, sc(34), str.confirm_title, ui_pref, pal.text_primary, max_dw);
-        dy += sc(60);
-
-        draw_labeled_language(dx, dy, max_dw, str.confirm_current_label, pal.text_secondary, view.active_entry);
-        dy += sc(52);
-        draw_labeled_language(dx, dy, max_dw, str.confirm_target_label, pal.accent, target);
-        dy += sc(48);
-
-        draw_notice_box(Rect{dx, dy, max_dw, sc(54)}, pal.info_bg, pal.info_border, pal.info_text, str.confirm_notice, small_px);
-
-        // Cancel & Confirm buttons
-        fill_rect(buffer, stride, width_, height_, lay.dialog_cancel_button, pal.button_secondary_bg);
-        draw_rect_outline(buffer, stride, width_, height_, lay.dialog_cancel_button, sc(2), pal.divider);
-        const int cancel_w = measure_text_width(str.cancel_button, body_px, ui_pref);
-        draw_text(buffer,
-                  stride,
-                  lay.dialog_cancel_button.x + std::max(sc(12), (lay.dialog_cancel_button.w - cancel_w) / 2),
-                  lay.dialog_cancel_button.y + sc(48),
-                  body_px,
-                  str.cancel_button,
-                  ui_pref,
-                  pal.text_primary,
-                  lay.dialog_cancel_button.w - sc(24));
-
-        fill_rect(buffer, stride, width_, height_, lay.dialog_confirm_button, pal.button_primary_bg);
-        const int confirm_w = measure_text_width(str.confirm_button, body_px, ui_pref);
-        draw_text(buffer,
-                  stride,
-                  lay.dialog_confirm_button.x + std::max(sc(12), (lay.dialog_confirm_button.w - confirm_w) / 2),
-                  lay.dialog_confirm_button.y + sc(48),
-                  body_px,
-                  str.confirm_button,
-                  ui_pref,
-                  pal.button_primary_text,
-                  lay.dialog_confirm_button.w - sc(24));
+        render_confirm_dialog(surface, view, ui_pref);
     } else if (view.screen == PickerScreen::Applying) {
-        // 9. In-progress Applying Overlay
-        fill_rect(buffer, stride, width_, height_, 0, 0, static_cast<int>(width_), static_cast<int>(height_), pal.modal_scrim);
-        fill_rect(buffer, stride, width_, height_, lay.result_box, pal.dialog_bg);
-        draw_rect_outline(buffer, stride, width_, height_, lay.result_box, border_px, pal.accent);
-
-        const int dx = lay.result_box.x + sc(40);
-        const int max_dw = lay.result_box.w - sc(80);
-        int dy = lay.result_box.y + sc(78);
-
-        draw_text(buffer, stride, dx, dy, sc(34), str.applying_title, ui_pref, pal.text_primary, max_dw);
-        dy += sc(66);
-        draw_labeled_language(dx, dy, max_dw, str.confirm_target_label, pal.accent, view.apply_report.target_entry);
-        dy += sc(66);
-        draw_notice_box(Rect{dx, dy, max_dw, sc(72)}, pal.info_bg, pal.info_border, pal.info_text, str.applying_detail, sub_px);
+        render_applying_dialog(surface, view, ui_pref);
     } else if (view.screen == PickerScreen::Result) {
-        // 10. Apply Result & Verification Outcome Overlay
-        const ApplyReport& rep = view.apply_report;
-        RgbaColor box_border = pal.accent;
-        const std::string* title_str = &str.result_verified_title;
-        if (rep.outcome == ApplyOutcome::Verified) {
-            box_border = pal.applied_badge_bg;
-            title_str = &str.result_verified_title;
-        } else if (rep.outcome == ApplyOutcome::ReadbackMismatch) {
-            box_border = pal.warning_border;
-            title_str = &str.result_mismatch_title;
-        } else if (rep.outcome == ApplyOutcome::ReadbackFailed) {
-            box_border = pal.error_border;
-            title_str = &str.result_readback_failed_title;
-        } else {
-            box_border = pal.error_border;
-            title_str = &str.result_rejected_title;
-        }
-
-        fill_rect(buffer, stride, width_, height_, 0, 0, static_cast<int>(width_), static_cast<int>(height_), pal.modal_scrim);
-        fill_rect(buffer, stride, width_, height_, lay.result_box, pal.dialog_bg);
-        draw_rect_outline(buffer, stride, width_, height_, lay.result_box, border_px, box_border);
-        fill_rect(buffer, stride, width_, height_, lay.result_box.x, lay.result_box.y, lay.result_box.w, sc(8), box_border);
-
-        const int dx = lay.result_box.x + sc(40);
-        const int max_dw = lay.result_box.w - sc(80);
-        int dy = lay.result_box.y + sc(64);
-
-        draw_text(buffer, stride, dx, dy, sc(34), *title_str, ui_pref, pal.text_primary, max_dw);
-        dy += sc(56);
-
-        if (rep.outcome == ApplyOutcome::Verified) {
-            draw_labeled_language(dx, dy, max_dw, str.confirm_target_label, pal.applied_badge_bg, rep.target_entry);
-            dy += sc(48);
-
-            const Rect note_box{dx, dy, max_dw, sc(108)};
-            fill_rect(buffer, stride, width_, height_, note_box, pal.info_bg);
-            draw_rect_outline(buffer, stride, width_, height_, note_box, sc(1), pal.info_border);
-            draw_text(buffer,
-                      stride,
-                      note_box.x + sc(18),
-                      note_box.y + sc(40),
-                      small_px,
-                      str.result_reopen_apps_note,
-                      ui_pref,
-                      pal.info_text,
-                      note_box.w - sc(36));
-            draw_text(buffer,
-                      stride,
-                      note_box.x + sc(18),
-                      note_box.y + sc(80),
-                      small_px,
-                      str.result_reboot_note,
-                      ui_pref,
-                      pal.info_text,
-                      note_box.w - sc(36));
-        } else if (rep.outcome == ApplyOutcome::ReadbackMismatch) {
-            draw_labeled_language(dx, dy, max_dw, str.result_expected_label, pal.text_secondary, rep.target_entry);
-            dy += sc(48);
-            draw_labeled_language(dx, dy, max_dw, str.result_actual_label, pal.warning_text, rep.actual_entry);
-            dy += sc(44);
-            draw_notice_box(Rect{dx, dy, max_dw, sc(64)},
-                            pal.warning_bg,
-                            pal.warning_border,
-                            pal.warning_text,
-                            str.result_mismatch_detail,
-                            small_px);
-        } else {
-            draw_labeled_language(dx, dy, max_dw, str.confirm_target_label, pal.text_secondary, rep.target_entry);
-            dy += sc(48);
-
-            char code_buf[64] = {};
-            std::snprintf(code_buf, sizeof(code_buf), "0x%08X", rep.error_code);
-            draw_text(buffer,
-                      stride,
-                      dx,
-                      dy,
-                      sub_px,
-                      str.result_label + ": " + code_buf,
-                      ui_pref,
-                      pal.error_text,
-                      max_dw);
-            dy += sc(44);
-
-            const std::string& detail_str =
-                (rep.outcome == ApplyOutcome::ReadbackFailed)
-                    ? str.result_readback_failed_detail
-                    : str.result_rejected_detail;
-            draw_notice_box(Rect{dx, dy, max_dw, sc(64)},
-                            pal.error_bg,
-                            pal.error_border,
-                            pal.error_text,
-                            detail_str,
-                            small_px);
-        }
-
-        fill_rect(buffer, stride, width_, height_, lay.result_continue_button, pal.button_primary_bg);
-        const int cont_w = measure_text_width(str.result_continue_button, body_px, ui_pref);
-        draw_text(buffer,
-                  stride,
-                  lay.result_continue_button.x + std::max(sc(12), (lay.result_continue_button.w - cont_w) / 2),
-                  lay.result_continue_button.y + sc(48),
-                  body_px,
-                  str.result_continue_button,
-                  ui_pref,
-                  pal.button_primary_text,
-                  lay.result_continue_button.w - sc(24));
+        render_result_dialog(surface, view, ui_pref);
     }
 }
 

@@ -73,17 +73,8 @@ LoopResult run_picker_loop(PlatformServices& platform, LanguageService& language
             resized = true;
         }
 
-        PickerInput input;
-        input.applet_running = snap.applet_running;
-        input.nav_up_held = snap.nav_up_held;
-        input.nav_down_held = snap.nav_down_held;
-        input.a_held = snap.a_held;
-        input.b_held = snap.b_held;
-        input.plus_held = snap.plus_held;
-        input.boundary_reset = snap.boundary_reset;
-        input.viewport_width = platform.viewport_width();
-        input.viewport_height = platform.viewport_height();
-        input.touch = snap.touch;
+        const PickerInput input = PickerInput::from_snapshot(
+            snap, platform.viewport_width(), platform.viewport_height());
 
         const PickerStepResult step_res = picker.step(input);
         if (step_res.exit_requested) {
