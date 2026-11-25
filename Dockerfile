@@ -23,7 +23,6 @@ RUN set -euo pipefail \
     && dkp-pacman-key --add /tmp/ounce-install/ounce.gpg \
     && dkp-pacman-key --lsign-key "${OUNCE_GPG_FPR}" \
     && printf '\n[ounce]\nServer = https://pkg.ouncebrew.org\n' >> /opt/devkitpro/pacman/etc/pacman.conf \
-    && dkp-pacman -Sy --noconfirm \
     && curl -fsSL "https://pkg.ouncebrew.org/${LIBOUNCE_PKG}" -o "/tmp/ounce-install/${LIBOUNCE_PKG}" \
     && curl -fsSL "https://pkg.ouncebrew.org/${LIBOUNCE_PKG}.sig" -o "/tmp/ounce-install/${LIBOUNCE_PKG}.sig" \
     && curl -fsSL "https://pkg.ouncebrew.org/${LIBKAIHEN_PKG}" -o "/tmp/ounce-install/${LIBKAIHEN_PKG}" \
