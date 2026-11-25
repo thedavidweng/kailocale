@@ -46,3 +46,9 @@ maps languages through `SetLanguage` enum integer indices.
 - If the active `setGetLanguageCode()` tag is absent from
   `setGetAvailableLanguageCodes()`, `LanguageCatalog` still resolves and displays
   the active language cleanly while flagging the mismatch without failing.
+- On Switch 2 Horizon OS, `setGetAvailableLanguageCodes()` also returns legacy
+  Switch 1 application-compatibility codes (`zh-CN` and `zh-TW`, verified on
+  hardware to be rejected by `setsysSetLanguageCode()` while `zh-Hans` / `zh-Hant`
+  succeed). `build_language_catalog()` therefore excludes `zh-CN` and `zh-TW`
+  from selectable menu choices while keeping `describe_language()` safe if ever
+  read.

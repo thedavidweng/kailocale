@@ -206,6 +206,35 @@ void test_service_failure_and_empty_available_list_produce_error_state() {
     CHECK(res3.error_stage == "available_languages_empty");
 }
 
+void test_legacy_compat_tags_excluded_from_selectable_entries() {
+    FakeLanguageService service;
+    service.current_result = {ServiceResult::success(), pack_language_code("zh-Hans")};
+    service.available_result = {
+        ServiceResult::success(),
+        {
+            pack_language_code("ja"),
+            pack_language_code("en-US"),
+            pack_language_code("zh-CN"),
+            pack_language_code("ko"),
+            pack_language_code("zh-TW"),
+            pack_language_code("zh-Hans"),
+            pack_language_code("zh-Hant"),
+            pack_language_code("pl"),
+            pack_language_code("th"),
+        },
+    };
+
+    const CatalogBuildResult cat = build_language_catalog(service);
+    CHECK(!cat.has_error);
+    CHECK(cat.entries.size() == 7);
+    for (const auto& entry : cat.entries) {
+        CHECK(entry.tag != "zh-CN");
+        CHECK(entry.tag != "zh-TW");
+    }
+    CHECK(cat.active_in_supported_list);
+    CHECK(cat.active_entry.tag == "zh-Hans");
+}
+
 } // namespace
 
 int main() {
@@ -219,6 +248,7 @@ int main() {
         {"catalog_deduplicates_filters_invalid_and_marks_active", test_catalog_deduplicates_filters_invalid_and_marks_active},
         {"active_language_absent_from_supported_list_sets_notice_safely", test_active_language_absent_from_supported_list_sets_notice_safely},
         {"service_failure_and_empty_available_list_produce_error_state", test_service_failure_and_empty_available_list_produce_error_state},
+        {"legacy_compat_tags_excluded_from_selectable_entries", test_legacy_compat_tags_excluded_from_selectable_entries},
     };
 
     int passed = 0;

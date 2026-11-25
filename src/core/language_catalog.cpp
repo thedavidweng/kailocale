@@ -37,6 +37,10 @@ constexpr KnownLanguageSpec kKnownLanguages[] = {
     {pack_language_code("zh-TW"), "zh-TW", "\xE7\xB9\x81\xE9\xAB\x94\xE4\xB8\xAD\xE6\x96\x87 (zh-TW)"},
 };
 
+bool is_legacy_compatibility_tag(LanguageCode code) {
+    return code == pack_language_code("zh-CN") || code == pack_language_code("zh-TW");
+}
+
 } // namespace
 
 LanguageEntry make_language_entry(LanguageCode code, bool system_supported, bool is_active) {
@@ -123,6 +127,11 @@ CatalogBuildResult build_language_catalog(LanguageService& service) {
 
     for (const LanguageCode raw_code : available.codes) {
         if (format_language_tag(raw_code).empty()) {
+            continue;
+        }
+        // Switch 2 setGetAvailableLanguageCodes() includes Switch 1 legacy app-compat tags
+        // (zh-CN, zh-TW) that setsysSetLanguageCode() rejects; keep only system-writable tags.
+        if (is_legacy_compatibility_tag(raw_code)) {
             continue;
         }
         if (!seen.insert(raw_code).second) {
