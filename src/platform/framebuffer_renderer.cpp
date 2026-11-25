@@ -1,6 +1,7 @@
 #include "framebuffer_renderer.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -50,38 +51,22 @@ void fill_rect(const RenderSurface& surface, const Rect& r, RgbaColor color) {
     fill_rect(surface, r.x, r.y, r.w, r.h, color);
 }
 
-void draw_rect_outline(const RenderSurface& surface,
-                       int x,
-                       int y,
-                       int w,
-                       int h,
-                       int thickness,
-                       RgbaColor color) {
-    const int t = std::max(1, thickness);
-    fill_rect(surface, x, y, w, t, color);
-    fill_rect(surface, x, y + h - t, w, t, color);
-    fill_rect(surface, x, y, t, h, color);
-    fill_rect(surface, x + w - t, y, t, h, color);
-}
-
-void draw_rect_outline(const RenderSurface& surface, const Rect& r, int thickness, RgbaColor color) {
-    draw_rect_outline(surface, r.x, r.y, r.w, r.h, thickness, color);
-}
-
 void blend_pixel(const RenderSurface& surface, int x, int y, RgbaColor color, std::uint8_t coverage) {
-    if (x < 0 || y < 0 || x >= static_cast<int>(surface.width) || y >= static_cast<int>(surface.height) ||
-        coverage == 0) {
+    if (x < 0 || y < 0 || x >= static_cast<int>(surface.width) || y >= static_cast<int>(surface.height)) {
+        return;
+    }
+    const std::uint32_t a = (static_cast<std::uint32_t>(coverage) * color.a + 127u) / 255u;
+    if (a == 0) {
         return;
     }
     auto* dst = surface.buffer + static_cast<std::size_t>(y) * surface.stride + static_cast<std::size_t>(x) * 4;
-    if (coverage == 255) {
+    if (a == 255) {
         dst[0] = color.r;
         dst[1] = color.g;
         dst[2] = color.b;
         dst[3] = 255;
         return;
     }
-    const std::uint32_t a = coverage;
     const std::uint32_t inv = 255u - a;
     dst[0] = static_cast<std::uint8_t>((dst[0] * inv + color.r * a) / 255u);
     dst[1] = static_cast<std::uint8_t>((dst[1] * inv + color.g * a) / 255u);
@@ -89,6 +74,159 @@ void blend_pixel(const RenderSurface& surface, int x, int y, RgbaColor color, st
     dst[3] = 255;
 }
 
+float clamp01(float v) {
+    return v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
+}
+
+std::uint8_t to_coverage(float v) {
+    return static_cast<std::uint8_t>(clamp01(v) * 255.f + 0.5f);
+}
+
+RgbaColor with_alpha(RgbaColor c, std::uint8_t a) {
+    c.a = a;
+    return c;
+}
+
+float rounded_rect_sdf(float px, float py, const Rect& r, float radius) {
+    const float hx = r.w * 0.5f;
+    const float hy = r.h * 0.5f;
+    const float qx = std::fabs(px - (r.x + hx)) - (hx - radius);
+    const float qy = std::fabs(py - (r.y + hy)) - (hy - radius);
+    const float ox = std::max(qx, 0.f);
+    const float oy = std::max(qy, 0.f);
+    return std::sqrt(ox * ox + oy * oy) + std::min(std::max(qx, qy), 0.f) - radius;
+}
+
+void fill_rounded_rect(const RenderSurface& surface, const Rect& r, int radius, RgbaColor color) {
+    radius = std::min(radius, std::min(r.w, r.h) / 2);
+    if (radius <= 0) {
+        fill_rect(surface, r, color);
+        return;
+    }
+    fill_rect(surface, r.x, r.y + radius, r.w, r.h - 2 * radius, color);
+    for (int i = 0; i < radius; ++i) {
+        for (const int py : {r.y + i, r.y + r.h - 1 - i}) {
+            fill_rect(surface, r.x + radius, py, r.w - 2 * radius, 1, color);
+            for (int j = 0; j < radius; ++j) {
+                for (const int px : {r.x + j, r.x + r.w - 1 - j}) {
+                    const float d = rounded_rect_sdf(px + 0.5f, py + 0.5f, r, static_cast<float>(radius));
+                    blend_pixel(surface, px, py, color, to_coverage(0.5f - d));
+                }
+            }
+        }
+    }
+}
+
+void stroke_rounded_rect(const RenderSurface& surface, const Rect& r, int radius, int thickness, RgbaColor color) {
+    radius = std::min(radius, std::min(r.w, r.h) / 2);
+    const int t = std::max(1, std::min(thickness, std::min(r.w, r.h) / 2));
+    const int band = std::max(radius, t);
+    fill_rect(surface, r.x + band, r.y, r.w - 2 * band, t, color);
+    fill_rect(surface, r.x + band, r.y + r.h - t, r.w - 2 * band, t, color);
+    fill_rect(surface, r.x, r.y + band, t, r.h - 2 * band, color);
+    fill_rect(surface, r.x + r.w - t, r.y + band, t, r.h - 2 * band, color);
+
+    const Rect inner{r.x + t, r.y + t, r.w - 2 * t, r.h - 2 * t};
+    const float inner_radius = static_cast<float>(std::max(0, radius - t));
+    for (int i = 0; i < band; ++i) {
+        for (const int py : {r.y + i, r.y + r.h - 1 - i}) {
+            for (int j = 0; j < band; ++j) {
+                for (const int px : {r.x + j, r.x + r.w - 1 - j}) {
+                    const float fx = px + 0.5f;
+                    const float fy = py + 0.5f;
+                    float cov = clamp01(0.5f - rounded_rect_sdf(fx, fy, r, static_cast<float>(radius)));
+                    if (inner.w > 0 && inner.h > 0) {
+                        cov -= clamp01(0.5f - rounded_rect_sdf(fx, fy, inner, inner_radius));
+                    }
+                    blend_pixel(surface, px, py, color, to_coverage(cov));
+                }
+            }
+        }
+    }
+}
+
+void fill_circle(const RenderSurface& surface, int cx, int cy, int diameter, RgbaColor color) {
+    fill_rounded_rect(surface, Rect{cx - diameter / 2, cy - diameter / 2, diameter, diameter}, diameter / 2, color);
+}
+
+void draw_segment(const RenderSurface& surface,
+                  float x0,
+                  float y0,
+                  float x1,
+                  float y1,
+                  float thickness,
+                  RgbaColor color) {
+    const float half = thickness * 0.5f;
+    const int bx0 = static_cast<int>(std::floor(std::min(x0, x1) - half - 1.f));
+    const int by0 = static_cast<int>(std::floor(std::min(y0, y1) - half - 1.f));
+    const int bx1 = static_cast<int>(std::ceil(std::max(x0, x1) + half + 1.f));
+    const int by1 = static_cast<int>(std::ceil(std::max(y0, y1) + half + 1.f));
+    const float dx = x1 - x0;
+    const float dy = y1 - y0;
+    const float len2 = dx * dx + dy * dy;
+    for (int py = by0; py < by1; ++py) {
+        for (int px = bx0; px < bx1; ++px) {
+            const float fx = px + 0.5f;
+            const float fy = py + 0.5f;
+            const float t = len2 > 0.f ? clamp01(((fx - x0) * dx + (fy - y0) * dy) / len2) : 0.f;
+            const float ex = fx - (x0 + t * dx);
+            const float ey = fy - (y0 + t * dy);
+            blend_pixel(surface, px, py, color, to_coverage(half - std::sqrt(ex * ex + ey * ey) + 0.5f));
+        }
+    }
+}
+
+void draw_ellipse_ring(const RenderSurface& surface,
+                       float cx,
+                       float cy,
+                       float a,
+                       float b,
+                       float thickness,
+                       RgbaColor color) {
+    const float half = thickness * 0.5f;
+    const int bx0 = static_cast<int>(std::floor(cx - a - half - 1.f));
+    const int by0 = static_cast<int>(std::floor(cy - b - half - 1.f));
+    const int bx1 = static_cast<int>(std::ceil(cx + a + half + 1.f));
+    const int by1 = static_cast<int>(std::ceil(cy + b + half + 1.f));
+    for (int py = by0; py < by1; ++py) {
+        for (int px = bx0; px < bx1; ++px) {
+            const float nx = (px + 0.5f - cx) / a;
+            const float ny = (py + 0.5f - cy) / b;
+            const float k = std::sqrt(nx * nx + ny * ny);
+            if (k < 1e-4f) {
+                continue;
+            }
+            // First-order distance to the ellipse: implicit value divided by its gradient length.
+            const float gx = nx / (a * k);
+            const float gy = ny / (b * k);
+            const float d = (k - 1.f) / std::sqrt(gx * gx + gy * gy);
+            blend_pixel(surface, px, py, color, to_coverage(half - std::fabs(d) + 0.5f));
+        }
+    }
+}
+
+void draw_check_mark(const RenderSurface& surface, int x, int y, int size, RgbaColor color) {
+    const float s = static_cast<float>(size);
+    const float t = std::max(2.f, s * 0.15f);
+    draw_segment(surface, x + s * 0.08f, y + s * 0.52f, x + s * 0.38f, y + s * 0.82f, t, color);
+    draw_segment(surface, x + s * 0.38f, y + s * 0.82f, x + s * 0.94f, y + s * 0.2f, t, color);
+}
+
+void draw_globe_icon(const RenderSurface& surface, int cx, int cy, int radius, int thickness, RgbaColor color) {
+    const float r = static_cast<float>(radius);
+    const float t = static_cast<float>(thickness);
+    const float fx = static_cast<float>(cx);
+    const float fy = static_cast<float>(cy);
+    draw_ellipse_ring(surface, fx, fy, r, r, t, color);
+    draw_ellipse_ring(surface, fx, fy, r * 0.42f, r, t, color);
+    draw_segment(surface, fx - r, fy, fx + r, fy, t, color);
+    draw_segment(surface, fx - r * 0.86f, fy - r * 0.5f, fx + r * 0.86f, fy - r * 0.5f, t, color);
+    draw_segment(surface, fx - r * 0.86f, fy + r * 0.5f, fx + r * 0.86f, fy + r * 0.5f, t, color);
+}
+
+int centered_baseline(int y, int h, int pixel_size) {
+    return y + (h + pixel_size * 7 / 10) / 2;
+}
 // Compact 5x7 uppercase/symbol fallback bitmap font used strictly when FreeType itself failed to init.
 const std::uint8_t* fallback_glyph_5x7(char ch) {
     if (ch >= 'a' && ch <= 'z') {
@@ -377,73 +515,243 @@ void FramebufferRenderer::draw_text(const RenderSurface& surface,
     }
 }
 
-void FramebufferRenderer::draw_button(const RenderSurface& surface,
-                                      const Rect& rect,
-                                      const ButtonStyle& style,
-                                      std::string_view label,
-                                      ScriptPreference pref) const {
-    fill_rect(surface, rect, style.bg);
-    if (style.border_thickness > 0) {
-        draw_rect_outline(surface, rect, style.border_thickness, style.border);
+void FramebufferRenderer::draw_text_centered(const RenderSurface& surface,
+                                             int center_x,
+                                             int baseline_y,
+                                             int pixel_size,
+                                             std::string_view text,
+                                             ScriptPreference pref,
+                                             RgbaColor color,
+                                             int max_width) const {
+    const int w = std::min(measure_text_width(text, pixel_size, pref), max_width);
+    draw_text(surface, center_x - w / 2, baseline_y, pixel_size, text, pref, color, max_width);
+}
+
+std::vector<std::string> FramebufferRenderer::wrap_text(std::string_view text,
+                                                        int pixel_size,
+                                                        ScriptPreference pref,
+                                                        int max_width) const {
+    std::vector<std::string> lines;
+    std::size_t start = 0;
+    std::size_t last_space = std::string_view::npos;
+    std::size_t i = 0;
+    while (i < text.size()) {
+        std::size_t next = i + 1;
+        while (next < text.size() && (static_cast<unsigned char>(text[next]) & 0xC0u) == 0x80u) {
+            ++next;
+        }
+        if (text[i] == ' ') {
+            last_space = i;
+        }
+        if (i > start && measure_text_width(text.substr(start, next - start), pixel_size, pref) > max_width) {
+            const bool at_space = last_space != std::string_view::npos && last_space > start;
+            const std::size_t brk = at_space ? last_space : i;
+            lines.emplace_back(text.substr(start, brk - start));
+            start = at_space ? brk + 1 : brk;
+            last_space = std::string_view::npos;
+            i = start;
+            continue;
+        }
+        i = next;
     }
-    const int pad_x = scale_px(12, surface.height);
-    const int label_w = measure_text_width(label, style.pixel_size, pref);
-    const int text_x = rect.x + std::max(pad_x, (rect.w - label_w) / 2);
-    draw_text(surface,
-              text_x,
-              rect.y + style.baseline_offset,
-              style.pixel_size,
-              label,
-              pref,
-              style.text_color,
-              std::max(0, rect.w - pad_x * 2));
+    if (start < text.size()) {
+        lines.emplace_back(text.substr(start));
+    }
+    return lines;
 }
 
-void FramebufferRenderer::draw_labeled_language(const RenderSurface& surface,
-                                                int x,
-                                                int y,
-                                                int max_w,
-                                                ScriptPreference ui_pref,
-                                                const std::string& label,
-                                                RgbaColor label_color,
-                                                const LanguageEntry& entry,
-                                                RgbaColor value_color) const {
-    const int sub_px = scale_px(22, surface.height);
-    const int body_px = scale_px(28, surface.height);
-    const std::string prefix = label + ":  ";
-    const int lbl_w = measure_text_width(prefix, sub_px, ui_pref);
-    const std::string val =
-        (entry.native_name == entry.tag) ? entry.tag : (entry.native_name + "  [" + entry.tag + "]");
-    draw_text(surface, x, y, sub_px, prefix, ui_pref, label_color);
-    draw_text(surface,
-              x + lbl_w,
-              y,
-              body_px,
-              val,
-              script_preference_for_tag(entry.tag),
-              value_color,
-              max_w - lbl_w);
+void FramebufferRenderer::draw_status_icon(const RenderSurface& surface,
+                                           int cx,
+                                           int cy,
+                                           int diameter,
+                                           char symbol,
+                                           RgbaColor color,
+                                           RgbaColor symbol_color) const {
+    const float d = static_cast<float>(diameter);
+    const float fx = static_cast<float>(cx);
+    const float fy = static_cast<float>(cy);
+    fill_circle(surface, cx, cy, diameter, color);
+    if (symbol == 'v') {
+        const int size = static_cast<int>(d * 0.56f);
+        draw_check_mark(surface, cx - size / 2, cy - size / 2, size, symbol_color);
+    } else if (symbol == '!') {
+        draw_segment(surface, fx, fy - d * 0.25f, fx, fy + d * 0.05f, d * 0.12f, symbol_color);
+        fill_circle(surface, cx, cy + static_cast<int>(d * 0.24f), std::max(2, static_cast<int>(d * 0.14f)), symbol_color);
+    } else if (symbol == 'i') {
+        fill_circle(surface, cx, cy - static_cast<int>(d * 0.24f), std::max(2, static_cast<int>(d * 0.14f)), symbol_color);
+        draw_segment(surface, fx, fy - d * 0.05f, fx, fy + d * 0.25f, d * 0.12f, symbol_color);
+    }
 }
 
-void FramebufferRenderer::draw_notice_box(const RenderSurface& surface,
-                                          const Rect& box,
-                                          RgbaColor box_bg,
-                                          RgbaColor box_border,
-                                          RgbaColor text_color,
-                                          std::string_view msg,
-                                          ScriptPreference pref,
-                                          int font_px) const {
-    const int pad_x = scale_px(18, surface.height);
-    fill_rect(surface, box, box_bg);
-    draw_rect_outline(surface, box, scale_px(1, surface.height), box_border);
-    draw_text(surface,
-              box.x + pad_x,
-              box.y + (box.h + font_px) / 2 - scale_px(4, surface.height),
-              font_px,
-              msg,
-              pref,
-              text_color,
-              box.w - pad_x * 2);
+void FramebufferRenderer::draw_key_glyph(const RenderSurface& surface,
+                                         int cx,
+                                         int cy,
+                                         int diameter,
+                                         char key,
+                                         const ThemePalette& pal) const {
+    fill_circle(surface, cx, cy, diameter, pal.glyph_bg);
+    const float d = static_cast<float>(diameter);
+    if (key == '+') {
+        const float fx = static_cast<float>(cx);
+        const float fy = static_cast<float>(cy);
+        draw_segment(surface, fx - d * 0.26f, fy, fx + d * 0.26f, fy, d * 0.12f, pal.glyph_fg);
+        draw_segment(surface, fx, fy - d * 0.26f, fx, fy + d * 0.26f, d * 0.12f, pal.glyph_fg);
+        return;
+    }
+    const char label[2] = {key, '\0'};
+    const int px = static_cast<int>(d * 0.66f);
+    const int w = measure_text_width(label, px, ScriptPreference::Default);
+    draw_text(surface, cx - w / 2, cy + px * 36 / 100, px, label, ScriptPreference::Default, pal.glyph_fg);
+}
+
+void FramebufferRenderer::draw_hint(const RenderSurface& surface,
+                                    const Rect& rect,
+                                    char key,
+                                    std::string_view label,
+                                    ScriptPreference pref,
+                                    const ThemePalette& pal) const {
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+    const int d = sc(36);
+    const int gap = sc(10);
+    const int px = sc(28);
+    const int label_w = std::min(measure_text_width(label, px, pref), rect.w - d - gap);
+    const int x0 = rect.x + std::max(0, (rect.w - d - gap - label_w) / 2);
+    draw_key_glyph(surface, x0 + d / 2, rect.y + rect.h / 2, d, key, pal);
+    draw_text(surface, x0 + d + gap, centered_baseline(rect.y, rect.h, px), px, label, pref, pal.text_primary, label_w);
+}
+
+void FramebufferRenderer::draw_language_line(const RenderSurface& surface,
+                                             int center_x,
+                                             int baseline_y,
+                                             int max_width,
+                                             ScriptPreference ui_pref,
+                                             const std::string& label,
+                                             const LanguageEntry& entry,
+                                             const ThemePalette& pal) const {
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+    const int label_px = sc(26);
+    const int name_px = sc(30);
+    const int tag_px = sc(24);
+    const int space = sc(18);
+    const ScriptPreference name_pref = script_preference_for_tag(entry.tag);
+    const bool show_tag = entry.native_name != entry.tag;
+
+    const int label_w = measure_text_width(label, label_px, ui_pref);
+    const int tag_w = show_tag ? measure_text_width(entry.tag, tag_px, ScriptPreference::Default) : 0;
+    const int fixed_w = label_w + space + (show_tag ? space + tag_w : 0);
+    const int name_w = std::min(measure_text_width(entry.native_name, name_px, name_pref),
+                                std::max(0, max_width - fixed_w));
+
+    int x = center_x - (fixed_w + name_w) / 2;
+    draw_text(surface, x, baseline_y, label_px, label, ui_pref, pal.text_secondary);
+    x += label_w + space;
+    draw_text(surface, x, baseline_y, name_px, entry.native_name, name_pref, pal.text_primary, name_w);
+    if (show_tag) {
+        x += name_w + space;
+        draw_text(surface, x, baseline_y, tag_px, entry.tag, ScriptPreference::Default, pal.text_faint);
+    }
+}
+
+void FramebufferRenderer::draw_dialog_content(const RenderSurface& surface,
+                                              const Rect& area,
+                                              const std::vector<DialogItem>& items,
+                                              ScriptPreference ui_pref,
+                                              const ThemePalette& pal,
+                                              RgbaColor surface_color) const {
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+    const int icon_d = sc(72);
+    const int title_px = sc(36);
+    const int title_lh = sc(52);
+    const int lang_lh = sc(48);
+    const int note_px = sc(24);
+    const int note_lh = sc(36);
+    const int max_w = area.w - 2 * sc(56);
+    const int cx = area.x + area.w / 2;
+
+    std::vector<std::vector<std::string>> wrapped(items.size());
+    int total_h = 0;
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const DialogItem& item = items[i];
+        switch (item.kind) {
+        case DialogItem::Kind::Icon:
+            total_h += icon_d + sc(24);
+            break;
+        case DialogItem::Kind::Title:
+            wrapped[i] = wrap_text(item.text, title_px, ui_pref, max_w);
+            total_h += static_cast<int>(wrapped[i].size()) * title_lh;
+            break;
+        case DialogItem::Kind::Language:
+            total_h += lang_lh;
+            break;
+        case DialogItem::Kind::Note:
+            wrapped[i] = wrap_text(item.text, note_px, ui_pref, max_w);
+            total_h += static_cast<int>(wrapped[i].size()) * note_lh;
+            break;
+        case DialogItem::Kind::Gap:
+            total_h += item.gap;
+            break;
+        }
+    }
+
+    int y = area.y + std::max(sc(24), (area.h - total_h) / 2);
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const DialogItem& item = items[i];
+        switch (item.kind) {
+        case DialogItem::Kind::Icon:
+            draw_status_icon(surface, cx, y + icon_d / 2, icon_d, item.symbol, item.color, surface_color);
+            y += icon_d + sc(24);
+            break;
+        case DialogItem::Kind::Title:
+            for (const std::string& line : wrapped[i]) {
+                draw_text_centered(surface, cx, centered_baseline(y, title_lh, title_px), title_px, line, ui_pref, pal.text_primary, max_w);
+                y += title_lh;
+            }
+            break;
+        case DialogItem::Kind::Language:
+            draw_language_line(surface, cx, centered_baseline(y, lang_lh, sc(30)), max_w, ui_pref, item.text, *item.entry, pal);
+            y += lang_lh;
+            break;
+        case DialogItem::Kind::Note:
+            for (const std::string& line : wrapped[i]) {
+                draw_text_centered(surface, cx, centered_baseline(y, note_lh, note_px), note_px, line, ui_pref, item.color, max_w);
+                y += note_lh;
+            }
+            break;
+        case DialogItem::Kind::Gap:
+            y += item.gap;
+            break;
+        }
+    }
+}
+
+void FramebufferRenderer::draw_dialog_frame(const RenderSurface& surface, const Rect& box, const ThemePalette& pal) const {
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+    fill_rect(surface, 0, 0, static_cast<int>(surface.width), static_cast<int>(surface.height), pal.modal_scrim);
+    const int radius = sc(10);
+    const int spread = sc(18);
+    for (int i = 1; i <= spread; ++i) {
+        const float k = 1.f - static_cast<float>(i) / static_cast<float>(spread + 1);
+        const Rect ring{box.x - i, box.y - i + sc(4), box.w + 2 * i, box.h + 2 * i};
+        stroke_rounded_rect(surface, ring, radius + i, 1, with_alpha(pal.highlight_shadow, static_cast<std::uint8_t>(60.f * k * k)));
+    }
+    fill_rounded_rect(surface, box, radius, pal.dialog_bg);
+}
+
+void FramebufferRenderer::draw_dialog_button(const RenderSurface& surface,
+                                             const Rect& rect,
+                                             std::string_view label,
+                                             bool focused,
+                                             ScriptPreference pref,
+                                             const ThemePalette& pal) const {
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+    if (focused) {
+        const int inset = sc(8);
+        const Rect frame{rect.x + inset, rect.y + inset, rect.w - 2 * inset, rect.h - 2 * inset};
+        fill_rounded_rect(surface, frame, sc(6), pal.highlight_bg);
+        stroke_rounded_rect(surface, frame, sc(6), sc(5), pal.highlight);
+    }
+    const int px = sc(30);
+    draw_text_centered(surface, rect.x + rect.w / 2, centered_baseline(rect.y, rect.h, px), px, label, pref, pal.accent, rect.w - sc(48));
 }
 
 void FramebufferRenderer::render_shell_view(std::uint8_t* buffer,
@@ -455,124 +763,112 @@ void FramebufferRenderer::render_shell_view(std::uint8_t* buffer,
 
     const RenderSurface surface{buffer, stride, width_, height_};
     const ThemePalette& pal = theme_for_system(SystemTheme::Dark);
-    const RgbaColor bg{38, 14, 20, 255};
-    const RgbaColor card_bg{58, 21, 30, 255};
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+    const int w = static_cast<int>(surface.width);
+    const int h = static_cast<int>(surface.height);
+    const int rule_t = std::max(1, sc(1));
 
-    fill_rect(surface, 0, 0, static_cast<int>(surface.width), static_cast<int>(surface.height), bg);
+    fill_rect(surface, 0, 0, w, h, pal.background);
 
-    const int margin_x = static_cast<int>(surface.width / 10);
-    const int margin_y = static_cast<int>(surface.height / 6);
-    const int card_w = static_cast<int>(surface.width) - 2 * margin_x;
-    const int card_h = static_cast<int>(surface.height) - 2 * margin_y;
-    const int border = std::max(3, static_cast<int>(surface.height / 270));
+    draw_globe_icon(surface, sc(92), sc(72), sc(25), std::max(2, sc(3)), pal.text_primary);
+    draw_text(surface, sc(140), sc(88), sc(42), view.app_name, ScriptPreference::Default, pal.text_primary);
+    const std::string version = std::string("v") + view.app_version;
+    const int version_px = sc(24);
+    const int version_w = measure_text_width(version, version_px, ScriptPreference::Default);
+    draw_text(surface, w - sc(66) - version_w, sc(88), version_px, version, ScriptPreference::Default, pal.text_faint);
+    fill_rect(surface, sc(45), sc(132) - rule_t, w - sc(90), rule_t, pal.header_rule);
 
-    fill_rect(surface, margin_x, margin_y, card_w, card_h, card_bg);
-    draw_rect_outline(surface, margin_x, margin_y, card_w, card_h, border, pal.error_border);
-
-    const int pad_x = margin_x + std::max(40, card_w / 14);
-    const int title_px = scale_px(48, surface.height);
-    const int body_px = scale_px(30, surface.height);
-    const int line_step = body_px + scale_px(24, surface.height);
-
-    const std::string title = std::string(view.app_name) + " v" + view.app_version;
     char detail_line[160] = {};
-    std::snprintf(detail_line,
-                  sizeof(detail_line),
-                  "Stage: %s   Result: 0x%08X",
-                  view.stage.c_str(),
-                  view.error_code);
+    std::snprintf(detail_line, sizeof(detail_line), "Stage: %s   Result: 0x%08X", view.stage.c_str(), view.error_code);
 
-    int y = margin_y + std::max(64, card_h / 5);
-    draw_text(surface, pad_x, y, title_px, title, ScriptPreference::Default, pal.text_primary);
-    y += title_px + scale_px(36, surface.height);
-    draw_text(surface,
-              pad_x,
-              y,
-              body_px,
-              "Service initialization failed",
-              ScriptPreference::Default,
-              pal.error_text);
-    y += line_step;
-    draw_text(surface, pad_x, y, body_px, detail_line, ScriptPreference::Default, pal.text_secondary);
-    y += line_step * 2;
-    draw_text(surface,
-              pad_x,
-              y,
-              body_px,
-              "Press + (Plus) to exit",
-              ScriptPreference::Default,
-              pal.text_primary);
+    const int cx = w / 2;
+    const int cy = h / 2;
+    draw_status_icon(surface, cx, cy - sc(110), sc(72), '!', pal.error, pal.background);
+    const int title_px = sc(36);
+    const int body_px = sc(26);
+    draw_text_centered(surface, cx, cy + sc(12), title_px, "Service initialization failed", ScriptPreference::Default, pal.text_primary, w);
+    draw_text_centered(surface, cx, cy + sc(70), body_px, detail_line, ScriptPreference::Default, pal.text_secondary, w);
+
+    const int footer_y = h - sc(108);
+    fill_rect(surface, sc(45), footer_y, w - sc(90), rule_t, pal.header_rule);
+    draw_hint(surface, Rect{w - sc(66) - sc(190), footer_y + sc(18), sc(190), sc(72)}, '+', "Exit", ScriptPreference::Default, pal);
 }
 
-void FramebufferRenderer::render_header(const RenderSurface& surface,
-                                        const PickerView& view,
-                                        ScriptPreference ui_pref) const {
+void FramebufferRenderer::render_header(const RenderSurface& surface, const PickerView& view) const {
+    const ThemePalette& pal = view.palette;
+    const PickerLayout& lay = view.layout;
+    const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+    const int w = static_cast<int>(surface.width);
+    const int rule_t = std::max(1, sc(1));
+
+    draw_globe_icon(surface, sc(92), sc(72), sc(25), std::max(2, sc(3)), pal.text_primary);
+    draw_text(surface, sc(140), sc(88), sc(42), view.app_name, ScriptPreference::Default, pal.text_primary);
+
+    const std::string version = std::string("v") + view.app_version;
+    const int version_px = sc(24);
+    const int version_w = measure_text_width(version, version_px, ScriptPreference::Default);
+    draw_text(surface, w - sc(66) - version_w, sc(88), version_px, version, ScriptPreference::Default, pal.text_faint);
+
+    fill_rect(surface, sc(45), lay.header.y + lay.header.h - rule_t, w - sc(90), rule_t, pal.header_rule);
+}
+
+void FramebufferRenderer::render_sidebar(const RenderSurface& surface,
+                                         const PickerView& view,
+                                         ScriptPreference ui_pref) const {
     const ThemePalette& pal = view.palette;
     const PickerLayout& lay = view.layout;
     const LocalizedStrings& str = view.strings;
     const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+    const int rule_t = std::max(1, sc(1));
+    const Rect& tab = lay.sidebar_tab;
 
-    fill_rect(surface, lay.header, pal.surface);
-    fill_rect(surface, 0, lay.header.y + lay.header.h - sc(2), lay.header.w, sc(2), pal.divider);
+    fill_rect(surface, lay.sidebar, pal.sidebar);
 
-    const int margin_x = lay.banner.x;
-    const int title_px = sc(40);
-    const int sub_px = sc(22);
-    const int body_px = sc(28);
-    const int small_px = sc(21);
+    fill_rounded_rect(surface, Rect{tab.x, tab.y + sc(16), sc(6), tab.h - sc(32)}, sc(3), pal.accent);
+    const int tab_px = sc(30);
+    draw_text(surface, tab.x + sc(26), centered_baseline(tab.y, tab.h, tab_px), tab_px, str.subtitle, ui_pref, pal.accent, tab.w - sc(30));
 
-    const std::string title = std::string(view.app_name) + "  v" + view.app_version;
-    draw_text(surface, margin_x, sc(58), title_px, title, ScriptPreference::Default, pal.text_primary);
-    draw_text(surface, margin_x, sc(98), sub_px, str.subtitle, ui_pref, pal.text_secondary);
+    const int rule_y = tab.y + tab.h + sc(24);
+    fill_rect(surface, tab.x, rule_y, tab.w, rule_t, pal.list_rule);
 
-    const int sub_w = measure_text_width(str.subtitle, sub_px, ui_pref);
-    const int pill_w = measure_text_width(str.mode_pill, small_px, ui_pref) + sc(24);
-    const Rect pill_rect{margin_x + sub_w + sc(20), sc(74), pill_w, sc(32)};
-    if (pill_rect.x + pill_rect.w < static_cast<int>(surface.width) / 2) {
-        fill_rect(surface, pill_rect, pal.info_bg);
-        draw_rect_outline(surface, pill_rect, sc(1), pal.info_border);
+    int y = rule_y + sc(64);
+    if (!view.active_entry.tag.empty()) {
+        draw_text(surface, tab.x, y, sc(24), str.current_label, ui_pref, pal.text_secondary, tab.w);
+        y += sc(54);
         draw_text(surface,
-                  pill_rect.x + sc(12),
-                  pill_rect.y + sc(23),
-                  small_px,
-                  str.mode_pill,
-                  ui_pref,
-                  pal.info_text);
+                  tab.x,
+                  y,
+                  sc(34),
+                  view.active_entry.native_name,
+                  script_preference_for_tag(view.active_entry.tag),
+                  pal.text_primary,
+                  tab.w);
+        if (view.active_entry.native_name != view.active_entry.tag) {
+            y += sc(42);
+            draw_text(surface, tab.x, y, sc(24), view.active_entry.tag, ScriptPreference::Default, pal.text_faint, tab.w);
+        }
+        y += sc(60);
+    }
+    for (const std::string& line : wrap_text(str.apply_note, sc(24), ui_pref, tab.w)) {
+        draw_text(surface, tab.x, y, sc(24), line, ui_pref, pal.text_secondary, tab.w);
+        y += sc(34);
     }
 
-    if (!view.active_entry.tag.empty()) {
-        const std::string active_prefix = str.current_label + ": ";
-        const int prefix_w = measure_text_width(active_prefix, sub_px, ui_pref);
-        const ScriptPreference active_pref = script_preference_for_tag(view.active_entry.tag);
-        const std::string active_value =
-            view.active_entry.native_name + "  [" + view.active_entry.tag + "]";
-        const int val_w = measure_text_width(active_value, body_px, active_pref);
-        const int pill_pad = sc(24);
-        const int active_pill_w = std::min(static_cast<int>(surface.width) / 2, prefix_w + val_w + pill_pad * 2);
-        const Rect active_pill_rect{
-            static_cast<int>(surface.width) - margin_x - active_pill_w,
-            sc(32),
-            active_pill_w,
-            sc(64),
-        };
-
-        fill_rect(surface, active_pill_rect, pal.row_bg);
-        draw_rect_outline(surface, active_pill_rect, sc(2), pal.applied_badge_bg);
-        draw_text(surface,
-                  active_pill_rect.x + pill_pad,
-                  active_pill_rect.y + sc(42),
-                  sub_px,
-                  active_prefix,
-                  ui_pref,
-                  pal.text_secondary);
-        draw_text(surface,
-                  active_pill_rect.x + pill_pad + prefix_w,
-                  active_pill_rect.y + sc(42),
-                  body_px,
-                  active_value,
-                  active_pref,
-                  pal.text_primary,
-                  active_pill_rect.w - pill_pad * 2 - prefix_w);
+    if (view.banner_kind != BannerKind::None && !view.banner_text.empty()) {
+        const Rect& banner = lay.banner;
+        const bool warn = view.banner_kind == BannerKind::Warning;
+        fill_rect(surface, banner.x, banner.y, banner.w, rule_t, pal.list_rule);
+        const int icon_d = sc(32);
+        const int text_x = banner.x + icon_d + sc(16);
+        const int line_h = sc(34);
+        const int text_px = sc(24);
+        const int top = banner.y + sc(28);
+        draw_status_icon(surface, banner.x + icon_d / 2, top + line_h / 2, icon_d, warn ? '!' : 'i', warn ? pal.warning : pal.accent, pal.sidebar);
+        int line_top = top;
+        for (const std::string& line : wrap_text(view.banner_text, text_px, ui_pref, banner.x + banner.w - text_x)) {
+            draw_text(surface, text_x, centered_baseline(line_top, line_h, text_px), text_px, line, ui_pref, pal.text_primary);
+            line_top += line_h;
+        }
     }
 }
 
@@ -584,26 +880,24 @@ void FramebufferRenderer::render_error_screen(const RenderSurface& surface,
     const LocalizedStrings& str = view.strings;
     const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
 
-    const int card_w = std::min(lay.banner.w, sc(1100));
-    const int card_h = sc(360);
-    const Rect card{(static_cast<int>(surface.width) - card_w) / 2,
-                    (static_cast<int>(surface.height) - card_h) / 2,
-                    card_w,
-                    card_h};
-    fill_rect(surface, card, pal.error_bg);
-    draw_rect_outline(surface, card, sc(3), pal.error_border);
-
-    const int tx = card.x + sc(48);
-    int ty = card.y + sc(78);
-    draw_text(surface, tx, ty, sc(36), str.service_error_title, ui_pref, pal.error_text);
-    ty += sc(56);
-    draw_text(surface, tx, ty, sc(28), str.service_error_detail, ui_pref, pal.text_primary);
-    ty += sc(64);
     char code_buf[64] = {};
     std::snprintf(code_buf, sizeof(code_buf), "0x%08X", view.error_code);
-    const std::string detail =
-        str.stage_label + ": " + view.error_stage + "   |   " + str.result_label + ": " + code_buf;
-    draw_text(surface, tx, ty, sc(22), detail, ui_pref, pal.text_secondary);
+
+    std::vector<DialogItem> items;
+    items.push_back({DialogItem::Kind::Icon, {}, nullptr, pal.error, '!', 0});
+    items.push_back({DialogItem::Kind::Title, str.service_error_title, nullptr, {}, 0, 0});
+    items.push_back({DialogItem::Kind::Gap, {}, nullptr, {}, 0, sc(8)});
+    items.push_back({DialogItem::Kind::Note, str.service_error_detail, nullptr, pal.text_secondary, 0, 0});
+    items.push_back({DialogItem::Kind::Gap, {}, nullptr, {}, 0, sc(8)});
+    items.push_back({DialogItem::Kind::Note,
+                     str.stage_label + ": " + view.error_stage + "    " + str.result_label + ": " + code_buf,
+                     nullptr,
+                     pal.text_faint,
+                     0,
+                     0});
+
+    const Rect area{lay.list_area.x, lay.section_header.y, lay.list_area.w, lay.list_area.y + lay.list_area.h - lay.section_header.y};
+    draw_dialog_content(surface, area, items, ui_pref, pal, pal.background);
 }
 
 void FramebufferRenderer::render_list_view(const RenderSurface& surface,
@@ -614,47 +908,33 @@ void FramebufferRenderer::render_list_view(const RenderSurface& surface,
     const LocalizedStrings& str = view.strings;
     const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
 
-    const int sub_px = sc(22);
-    const int body_px = sc(28);
-    const int small_px = sc(21);
-    const int border_px = sc(3);
+    const int rule_t = std::max(1, sc(1));
+    const int text_inset = sc(30);
+    const int small_px = sc(24);
+    const int name_px = sc(30);
+    const int tag_px = sc(26);
 
-    if (view.banner_kind != BannerKind::None && !view.banner_text.empty()) {
-        const bool warn = (view.banner_kind == BannerKind::Warning);
-        fill_rect(surface, lay.banner, warn ? pal.warning_bg : pal.info_bg);
-        draw_rect_outline(surface, lay.banner, sc(2), warn ? pal.warning_border : pal.info_border);
-        draw_text(surface,
-                  lay.banner.x + sc(20),
-                  lay.banner.y + sc(34),
-                  sub_px,
-                  view.banner_text,
-                  ui_pref,
-                  warn ? pal.warning_text : pal.info_text,
-                  lay.banner.w - sc(40));
-    }
-
-    draw_text(surface,
-              lay.section_header.x,
-              lay.section_header.y + sc(24),
-              small_px,
-              str.supported_header,
-              ui_pref,
-              pal.text_secondary);
+    const int header_baseline = lay.section_header.y + sc(34);
+    draw_text(surface, lay.list_area.x + text_inset, header_baseline, small_px, str.supported_header, ui_pref, pal.text_secondary);
     if (!view.entries.empty()) {
         char count_buf[48] = {};
-        std::snprintf(count_buf,
-                      sizeof(count_buf),
-                      "%zu / %zu",
-                      view.focused_index + 1,
-                      view.entries.size());
+        std::snprintf(count_buf, sizeof(count_buf), "%zu / %zu", view.focused_index + 1, view.entries.size());
         const int cw = measure_text_width(count_buf, small_px, ScriptPreference::Default);
         draw_text(surface,
-                  lay.list_area.x + lay.list_area.w - cw,
-                  lay.section_header.y + sc(24),
+                  lay.list_area.x + lay.list_area.w - text_inset - cw,
+                  header_baseline,
                   small_px,
                   count_buf,
                   ScriptPreference::Default,
-                  pal.text_secondary);
+                  pal.text_faint);
+    }
+
+    for (const Rect& row : lay.row_rects) {
+        fill_rect(surface, row.x, row.y, row.w, rule_t, pal.list_rule);
+    }
+    if (!lay.row_rects.empty()) {
+        const Rect& last = lay.row_rects.back();
+        fill_rect(surface, last.x, last.y + last.h, last.w, rule_t, pal.list_rule);
     }
 
     for (std::size_t i = 0; i < lay.row_rects.size(); ++i) {
@@ -664,70 +944,57 @@ void FramebufferRenderer::render_list_view(const RenderSurface& surface,
         }
         const LanguageEntry& entry = view.entries[idx];
         const Rect& row = lay.row_rects[i];
-        const bool focused = (idx == view.focused_index);
-        const bool applied = (entry.code == view.applied_code);
+        const bool applied = entry.code == view.applied_code;
 
-        fill_rect(surface, row, focused ? pal.focus_bg : pal.row_bg);
-        if (focused) {
-            draw_rect_outline(surface, row, border_px, pal.focus_border);
-            fill_rect(surface, row.x, row.y, sc(8), row.h, pal.focus_border);
-        } else {
-            draw_rect_outline(surface, row, sc(1), pal.divider);
+        if (idx == view.focused_index) {
+            const Rect frame{row.x - sc(4), row.y - sc(2), row.w + sc(8), row.h + sc(4)};
+            const int radius = sc(4);
+            const int spread = sc(12);
+            const float peak = view.theme == SystemTheme::Light ? 34.f : 80.f;
+            for (int s = 1; s <= spread; ++s) {
+                const float k = 1.f - static_cast<float>(s) / static_cast<float>(spread + 1);
+                const Rect ring{frame.x - s, frame.y - s + sc(2), frame.w + 2 * s, frame.h + 2 * s};
+                stroke_rounded_rect(surface, ring, radius + s, 1, with_alpha(pal.highlight_shadow, static_cast<std::uint8_t>(peak * k * k)));
+            }
+            fill_rounded_rect(surface, frame, radius, pal.highlight_bg);
+            stroke_rounded_rect(surface, frame, radius, sc(5), pal.highlight);
         }
 
-        const ScriptPreference row_pref = script_preference_for_tag(entry.tag);
-        const int text_baseline = row.y + (row.h + body_px) / 2 - sc(4);
-        const int label_x = row.x + sc(28);
-
-        int right_edge = row.x + row.w - sc(24);
+        int right_edge = row.x + row.w - text_inset;
         if (applied) {
-            const int badge_text_w = measure_text_width(str.applied_badge, small_px, ui_pref);
-            const int badge_w = badge_text_w + sc(28);
-            const int badge_h = sc(36);
-            const Rect badge{right_edge - badge_w, row.y + (row.h - badge_h) / 2, badge_w, badge_h};
-            fill_rect(surface, badge, pal.applied_badge_bg);
-            draw_text(surface,
-                      badge.x + sc(14),
-                      badge.y + sc(25),
-                      small_px,
-                      str.applied_badge,
-                      ui_pref,
-                      pal.applied_badge_text);
-            right_edge = badge.x - sc(20);
+            const int check = sc(30);
+            draw_check_mark(surface, right_edge - check, row.y + (row.h - check) / 2, check, pal.accent);
+            right_edge -= check + sc(22);
         }
 
-        const int tag_w = measure_text_width(entry.tag, sub_px, ScriptPreference::Default);
-        draw_text(surface,
-                  right_edge - tag_w,
-                  text_baseline,
-                  sub_px,
-                  entry.tag,
-                  ScriptPreference::Default,
-                  pal.text_secondary);
+        const int tag_w = measure_text_width(entry.tag, tag_px, ScriptPreference::Default);
+        if (entry.native_name != entry.tag) {
+            draw_text(surface, right_edge - tag_w, centered_baseline(row.y, row.h, tag_px), tag_px, entry.tag, ScriptPreference::Default, pal.text_faint);
+        }
 
-        const int max_name_w = std::max(sc(120), (right_edge - tag_w - sc(24)) - label_x);
+        const int label_x = row.x + text_inset;
+        const int max_name_w = std::max(sc(120), right_edge - tag_w - sc(24) - label_x);
         draw_text(surface,
                   label_x,
-                  text_baseline,
-                  body_px,
+                  centered_baseline(row.y, row.h, name_px),
+                  name_px,
                   entry.native_name,
-                  row_pref,
-                  pal.text_primary,
+                  script_preference_for_tag(entry.tag),
+                  applied ? pal.accent : pal.text_primary,
                   max_name_w);
     }
 
     if (view.entries.size() > lay.visible_rows && lay.visible_rows > 0) {
-        fill_rect(surface, lay.scrollbar_track, pal.divider);
+        const Rect& track = lay.scrollbar_track;
         const std::size_t total = view.entries.size();
         const int thumb_h = std::max(
-            sc(40),
-            static_cast<int>((static_cast<long long>(lay.scrollbar_track.h) * lay.visible_rows) / total));
+            sc(48),
+            static_cast<int>((static_cast<long long>(track.h) * lay.visible_rows) / total));
         const std::size_t max_scroll = total - lay.visible_rows;
-        const int travel = lay.scrollbar_track.h - thumb_h;
+        const int travel = track.h - thumb_h;
         const int thumb_y =
-            lay.scrollbar_track.y +
-            (max_scroll > 0 ? static_cast<int>((static_cast<long long>(travel) * lay.scroll_offset) / max_scroll) : 0);
-        fill_rect(surface, lay.scrollbar_track.x, thumb_y, lay.scrollbar_track.w, thumb_h, pal.accent);
+            track.y + (max_scroll > 0 ? static_cast<int>((static_cast<long long>(travel) * lay.scroll_offset) / max_scroll) : 0);
+        fill_rounded_rect(surface, Rect{track.x, thumb_y, track.w, thumb_h}, track.w / 2, pal.text_faint);
     }
 }
 
@@ -738,42 +1005,28 @@ void FramebufferRenderer::render_footer(const RenderSurface& surface,
     const PickerLayout& lay = view.layout;
     const LocalizedStrings& str = view.strings;
     const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+    const int rule_t = std::max(1, sc(1));
 
-    const int margin_x = lay.banner.x;
-    const int sub_px = sc(22);
+    fill_rect(surface, sc(45), lay.footer.y, lay.footer.w - sc(90), rule_t, pal.header_rule);
 
-    fill_rect(surface, lay.footer, pal.surface);
-    fill_rect(surface, 0, lay.footer.y, lay.footer.w, sc(2), pal.divider);
-
-    const int hint_y = lay.footer.y + sc(56);
-    if (view.screen == PickerScreen::List) {
-        const std::string hints = str.hint_navigate + "     " + str.hint_select + "     " + str.hint_exit;
-        draw_text(surface, margin_x, hint_y, sub_px, hints, ui_pref, pal.text_secondary);
-        draw_button(surface,
-                    lay.select_button,
-                    {pal.button_primary_bg, {}, 0, sub_px, sc(41), pal.button_primary_text},
-                    str.hint_select,
-                    ui_pref);
-    } else if (view.screen == PickerScreen::ConfirmDialog) {
-        const std::string hints = str.hint_confirm + "     " + str.hint_cancel + "     " + str.hint_exit;
-        draw_text(surface, margin_x, hint_y, sub_px, hints, ui_pref, pal.text_secondary);
-    } else if (view.screen == PickerScreen::Applying) {
-        draw_text(surface, margin_x, hint_y, sub_px, str.applying_title, ui_pref, pal.text_secondary);
-    } else if (view.screen == PickerScreen::Result) {
-        const std::string hints = str.hint_continue + "     " + str.hint_exit;
-        draw_text(surface, margin_x, hint_y, sub_px, hints, ui_pref, pal.text_secondary);
-    } else {
-        draw_text(surface, margin_x, hint_y, sub_px, str.hint_exit, ui_pref, pal.text_secondary);
-    }
-
-    if (view.screen == PickerScreen::List ||
-        view.screen == PickerScreen::Result ||
-        view.screen == PickerScreen::Error) {
-        draw_button(surface,
-                    lay.exit_button,
-                    {pal.button_secondary_bg, pal.divider, sc(1), sub_px, sc(41), pal.text_primary},
-                    str.hint_exit,
-                    ui_pref);
+    switch (view.screen) {
+    case PickerScreen::List:
+        draw_hint(surface, lay.select_button, 'A', str.hint_select, ui_pref, pal);
+        draw_hint(surface, lay.exit_button, '+', str.hint_exit, ui_pref, pal);
+        break;
+    case PickerScreen::ConfirmDialog:
+        draw_hint(surface, lay.select_button, 'A', str.confirm_button, ui_pref, pal);
+        draw_hint(surface, lay.exit_button, 'B', str.cancel_button, ui_pref, pal);
+        break;
+    case PickerScreen::Result:
+        draw_hint(surface, lay.select_button, 'A', str.result_continue_button, ui_pref, pal);
+        draw_hint(surface, lay.exit_button, '+', str.hint_exit, ui_pref, pal);
+        break;
+    case PickerScreen::Error:
+        draw_hint(surface, lay.exit_button, '+', str.hint_exit, ui_pref, pal);
+        break;
+    case PickerScreen::Applying:
+        break;
     }
 }
 
@@ -784,67 +1037,47 @@ void FramebufferRenderer::render_confirm_dialog(const RenderSurface& surface,
     const PickerLayout& lay = view.layout;
     const LocalizedStrings& str = view.strings;
     const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+    const Rect& box = lay.dialog_box;
+    const Rect& confirm = lay.dialog_confirm_button;
+    const int rule_t = std::max(1, sc(1));
+    const RgbaColor rule = with_alpha(pal.text_faint, 110);
 
-    const int body_px = sc(28);
-    const int small_px = sc(21);
-
-    fill_rect(surface, 0, 0, static_cast<int>(surface.width), static_cast<int>(surface.height), pal.modal_scrim);
-    fill_rect(surface, lay.dialog_box, pal.dialog_bg);
-    draw_rect_outline(surface, lay.dialog_box, sc(3), pal.focus_border);
+    draw_dialog_frame(surface, box, pal);
 
     const LanguageEntry& target = view.entries[view.dialog_target_index];
-    const int dx = lay.dialog_box.x + sc(40);
-    const int max_dw = lay.dialog_box.w - sc(80);
-    int dy = lay.dialog_box.y + sc(66);
+    const std::vector<DialogItem> items{
+        {DialogItem::Kind::Title, str.confirm_title, nullptr, {}, 0, 0},
+        {DialogItem::Kind::Gap, {}, nullptr, {}, 0, sc(16)},
+        {DialogItem::Kind::Language, str.confirm_current_label, &view.active_entry, {}, 0, 0},
+        {DialogItem::Kind::Language, str.confirm_target_label, &target, {}, 0, 0},
+        {DialogItem::Kind::Gap, {}, nullptr, {}, 0, sc(12)},
+        {DialogItem::Kind::Note, str.confirm_notice, nullptr, pal.text_secondary, 0, 0},
+    };
+    draw_dialog_content(surface, Rect{box.x, box.y, box.w, confirm.y - box.y}, items, ui_pref, pal, pal.dialog_bg);
 
-    draw_text(surface, dx, dy, sc(34), str.confirm_title, ui_pref, pal.text_primary, max_dw);
-    dy += sc(60);
-
-    draw_labeled_language(
-        surface, dx, dy, max_dw, ui_pref, str.confirm_current_label, pal.text_secondary, view.active_entry, pal.text_primary);
-    dy += sc(52);
-    draw_labeled_language(
-        surface, dx, dy, max_dw, ui_pref, str.confirm_target_label, pal.accent, target, pal.text_primary);
-    dy += sc(48);
-
-    draw_notice_box(
-        surface, Rect{dx, dy, max_dw, sc(54)}, pal.info_bg, pal.info_border, pal.info_text, str.confirm_notice, ui_pref, small_px);
-
-    draw_button(surface,
-                lay.dialog_cancel_button,
-                {pal.button_secondary_bg, pal.divider, sc(2), body_px, sc(48), pal.text_primary},
-                str.cancel_button,
-                ui_pref);
-    draw_button(surface,
-                lay.dialog_confirm_button,
-                {pal.button_primary_bg, {}, 0, body_px, sc(48), pal.button_primary_text},
-                str.confirm_button,
-                ui_pref);
+    fill_rect(surface, box.x, confirm.y, box.w, rule_t, rule);
+    fill_rect(surface, confirm.x, confirm.y + sc(22), rule_t, confirm.h - sc(44), rule);
+    draw_dialog_button(surface, lay.dialog_cancel_button, str.cancel_button, false, ui_pref, pal);
+    draw_dialog_button(surface, confirm, str.confirm_button, true, ui_pref, pal);
 }
 
 void FramebufferRenderer::render_applying_dialog(const RenderSurface& surface,
                                                  const PickerView& view,
                                                  ScriptPreference ui_pref) const {
     const ThemePalette& pal = view.palette;
-    const PickerLayout& lay = view.layout;
     const LocalizedStrings& str = view.strings;
     const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+    const Rect& box = view.layout.result_box;
 
-    fill_rect(surface, 0, 0, static_cast<int>(surface.width), static_cast<int>(surface.height), pal.modal_scrim);
-    fill_rect(surface, lay.result_box, pal.dialog_bg);
-    draw_rect_outline(surface, lay.result_box, sc(3), pal.accent);
-
-    const int dx = lay.result_box.x + sc(40);
-    const int max_dw = lay.result_box.w - sc(80);
-    int dy = lay.result_box.y + sc(78);
-
-    draw_text(surface, dx, dy, sc(34), str.applying_title, ui_pref, pal.text_primary, max_dw);
-    dy += sc(66);
-    draw_labeled_language(
-        surface, dx, dy, max_dw, ui_pref, str.confirm_target_label, pal.accent, view.apply_report.target_entry, pal.text_primary);
-    dy += sc(66);
-    draw_notice_box(
-        surface, Rect{dx, dy, max_dw, sc(72)}, pal.info_bg, pal.info_border, pal.info_text, str.applying_detail, ui_pref, sc(22));
+    draw_dialog_frame(surface, box, pal);
+    const std::vector<DialogItem> items{
+        {DialogItem::Kind::Title, str.applying_title, nullptr, {}, 0, 0},
+        {DialogItem::Kind::Gap, {}, nullptr, {}, 0, sc(16)},
+        {DialogItem::Kind::Language, str.confirm_target_label, &view.apply_report.target_entry, {}, 0, 0},
+        {DialogItem::Kind::Gap, {}, nullptr, {}, 0, sc(12)},
+        {DialogItem::Kind::Note, str.applying_detail, nullptr, pal.text_secondary, 0, 0},
+    };
+    draw_dialog_content(surface, box, items, ui_pref, pal, pal.dialog_bg);
 }
 
 void FramebufferRenderer::render_result_dialog(const RenderSurface& surface,
@@ -855,104 +1088,57 @@ void FramebufferRenderer::render_result_dialog(const RenderSurface& surface,
     const LocalizedStrings& str = view.strings;
     const ApplyReport& rep = view.apply_report;
     const auto sc = [&surface](int v) { return scale_px(v, surface.height); };
+    const Rect& box = lay.result_box;
+    const Rect& button = lay.result_continue_button;
+    const int rule_t = std::max(1, sc(1));
 
-    const int sub_px = sc(22);
-    const int body_px = sc(28);
-    const int small_px = sc(21);
+    draw_dialog_frame(surface, box, pal);
 
-    RgbaColor box_border = pal.error_border;
-    const std::string* title_str = &str.result_rejected_title;
+    const DialogItem gap{DialogItem::Kind::Gap, {}, nullptr, {}, 0, sc(14)};
+    std::vector<DialogItem> items;
     if (rep.outcome == ApplyOutcome::Verified) {
-        box_border = pal.applied_badge_bg;
-        title_str = &str.result_verified_title;
+        items = {
+            {DialogItem::Kind::Icon, {}, nullptr, pal.accent, 'v', 0},
+            {DialogItem::Kind::Title, str.result_verified_title, nullptr, {}, 0, 0},
+            gap,
+            {DialogItem::Kind::Language, str.confirm_target_label, &rep.target_entry, {}, 0, 0},
+            gap,
+            {DialogItem::Kind::Note, str.result_reopen_apps_note, nullptr, pal.text_secondary, 0, 0},
+            {DialogItem::Kind::Note, str.result_reboot_note, nullptr, pal.text_secondary, 0, 0},
+        };
     } else if (rep.outcome == ApplyOutcome::ReadbackMismatch) {
-        box_border = pal.warning_border;
-        title_str = &str.result_mismatch_title;
-    } else if (rep.outcome == ApplyOutcome::ReadbackFailed) {
-        box_border = pal.error_border;
-        title_str = &str.result_readback_failed_title;
-    }
-
-    fill_rect(surface, 0, 0, static_cast<int>(surface.width), static_cast<int>(surface.height), pal.modal_scrim);
-    fill_rect(surface, lay.result_box, pal.dialog_bg);
-    draw_rect_outline(surface, lay.result_box, sc(3), box_border);
-    fill_rect(surface, lay.result_box.x, lay.result_box.y, lay.result_box.w, sc(8), box_border);
-
-    const int dx = lay.result_box.x + sc(40);
-    const int max_dw = lay.result_box.w - sc(80);
-    int dy = lay.result_box.y + sc(64);
-
-    draw_text(surface, dx, dy, sc(34), *title_str, ui_pref, pal.text_primary, max_dw);
-    dy += sc(56);
-
-    if (rep.outcome == ApplyOutcome::Verified) {
-        draw_labeled_language(
-            surface, dx, dy, max_dw, ui_pref, str.confirm_target_label, pal.applied_badge_bg, rep.target_entry, pal.text_primary);
-        dy += sc(48);
-
-        const Rect note_box{dx, dy, max_dw, sc(108)};
-        fill_rect(surface, note_box, pal.info_bg);
-        draw_rect_outline(surface, note_box, sc(1), pal.info_border);
-        draw_text(surface,
-                  note_box.x + sc(18),
-                  note_box.y + sc(40),
-                  small_px,
-                  str.result_reopen_apps_note,
-                  ui_pref,
-                  pal.info_text,
-                  note_box.w - sc(36));
-        draw_text(surface,
-                  note_box.x + sc(18),
-                  note_box.y + sc(80),
-                  small_px,
-                  str.result_reboot_note,
-                  ui_pref,
-                  pal.info_text,
-                  note_box.w - sc(36));
-    } else if (rep.outcome == ApplyOutcome::ReadbackMismatch) {
-        draw_labeled_language(
-            surface, dx, dy, max_dw, ui_pref, str.result_expected_label, pal.text_secondary, rep.target_entry, pal.text_primary);
-        dy += sc(48);
-        draw_labeled_language(
-            surface, dx, dy, max_dw, ui_pref, str.result_actual_label, pal.warning_text, rep.actual_entry, pal.text_primary);
-        dy += sc(44);
-        draw_notice_box(surface,
-                        Rect{dx, dy, max_dw, sc(64)},
-                        pal.warning_bg,
-                        pal.warning_border,
-                        pal.warning_text,
-                        str.result_mismatch_detail,
-                        ui_pref,
-                        small_px);
+        items = {
+            {DialogItem::Kind::Icon, {}, nullptr, pal.warning, '!', 0},
+            {DialogItem::Kind::Title, str.result_mismatch_title, nullptr, {}, 0, 0},
+            gap,
+            {DialogItem::Kind::Language, str.result_expected_label, &rep.target_entry, {}, 0, 0},
+            {DialogItem::Kind::Language, str.result_actual_label, &rep.actual_entry, {}, 0, 0},
+            gap,
+            {DialogItem::Kind::Note, str.result_mismatch_detail, nullptr, pal.text_secondary, 0, 0},
+        };
     } else {
-        draw_labeled_language(
-            surface, dx, dy, max_dw, ui_pref, str.confirm_target_label, pal.text_secondary, rep.target_entry, pal.text_primary);
-        dy += sc(48);
-
         char code_buf[64] = {};
         std::snprintf(code_buf, sizeof(code_buf), "0x%08X", rep.error_code);
-        draw_text(surface, dx, dy, sub_px, str.result_label + ": " + code_buf, ui_pref, pal.error_text, max_dw);
-        dy += sc(44);
-
-        const std::string& detail_str =
-            (rep.outcome == ApplyOutcome::ReadbackFailed)
-                ? str.result_readback_failed_detail
-                : str.result_rejected_detail;
-        draw_notice_box(surface,
-                        Rect{dx, dy, max_dw, sc(64)},
-                        pal.error_bg,
-                        pal.error_border,
-                        pal.error_text,
-                        detail_str,
-                        ui_pref,
-                        small_px);
+        const bool readback_failed = rep.outcome == ApplyOutcome::ReadbackFailed;
+        items = {
+            {DialogItem::Kind::Icon, {}, nullptr, pal.error, '!', 0},
+            {DialogItem::Kind::Title, readback_failed ? str.result_readback_failed_title : str.result_rejected_title, nullptr, {}, 0, 0},
+            gap,
+            {DialogItem::Kind::Language, str.confirm_target_label, &rep.target_entry, {}, 0, 0},
+            gap,
+            {DialogItem::Kind::Note,
+             readback_failed ? str.result_readback_failed_detail : str.result_rejected_detail,
+             nullptr,
+             pal.text_secondary,
+             0,
+             0},
+            {DialogItem::Kind::Note, str.result_label + ": " + code_buf, nullptr, pal.text_faint, 0, 0},
+        };
     }
+    draw_dialog_content(surface, Rect{box.x, box.y, box.w, button.y - box.y}, items, ui_pref, pal, pal.dialog_bg);
 
-    draw_button(surface,
-                lay.result_continue_button,
-                {pal.button_primary_bg, {}, 0, body_px, sc(48), pal.button_primary_text},
-                str.result_continue_button,
-                ui_pref);
+    fill_rect(surface, box.x, button.y, box.w, rule_t, with_alpha(pal.text_faint, 110));
+    draw_dialog_button(surface, button, str.result_continue_button, true, ui_pref, pal);
 }
 
 void FramebufferRenderer::render_picker_view(std::uint8_t* buffer,
@@ -967,7 +1153,8 @@ void FramebufferRenderer::render_picker_view(std::uint8_t* buffer,
 
     fill_rect(surface, 0, 0, static_cast<int>(surface.width), static_cast<int>(surface.height), view.palette.background);
 
-    render_header(surface, view, ui_pref);
+    render_header(surface, view);
+    render_sidebar(surface, view, ui_pref);
     if (view.screen == PickerScreen::Error) {
         render_error_screen(surface, view, ui_pref);
     } else {

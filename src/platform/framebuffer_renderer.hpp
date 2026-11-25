@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -23,7 +24,7 @@ struct RenderSurface {
     std::uint32_t height = 0;
 };
 
-/// Renders KaiLocale shell errors and picker screens into a Switch 2 linear RGBA8 Framebuffer using FreeType + HarfBuzz.
+/// Renders KaiLocale shell errors and Horizon-styled picker screens into a Switch 2 linear RGBA8 Framebuffer using FreeType + HarfBuzz.
 class FramebufferRenderer {
 public:
     ~FramebufferRenderer();
@@ -36,21 +37,22 @@ public:
     void render_picker_view(std::uint8_t* buffer, std::uint32_t stride, const PickerView& view) const;
 
 private:
-    struct ButtonStyle {
-        RgbaColor bg{};
-        RgbaColor border{};
-        int border_thickness = 0;
-        int pixel_size = 0;
-        int baseline_offset = 0;
-        RgbaColor text_color{};
-    };
-
     struct ShapedGlyph {
         FT_Face face = nullptr;
         std::uint32_t glyph_index = 0;
         int x_advance = 0;
         int x_offset = 0;
         int y_offset = 0;
+    };
+
+    struct DialogItem {
+        enum class Kind { Icon, Title, Language, Note, Gap };
+        Kind kind = Kind::Gap;
+        std::string text;
+        const LanguageEntry* entry = nullptr;
+        RgbaColor color{};
+        char symbol = 0;
+        int gap = 0;
     };
 
     static bool has_glyph_cb(void* ctx, FontSlot slot, std::uint32_t codepoint);
@@ -67,30 +69,56 @@ private:
                    ScriptPreference pref,
                    RgbaColor color,
                    int max_width = 0) const;
-    void draw_button(const RenderSurface& surface,
-                     const Rect& rect,
-                     const ButtonStyle& style,
-                     std::string_view label,
-                     ScriptPreference pref) const;
-    void draw_labeled_language(const RenderSurface& surface,
-                               int x,
-                               int y,
-                               int max_w,
-                               ScriptPreference ui_pref,
-                               const std::string& label,
-                               RgbaColor label_color,
-                               const LanguageEntry& entry,
-                               RgbaColor value_color) const;
-    void draw_notice_box(const RenderSurface& surface,
-                         const Rect& box,
-                         RgbaColor box_bg,
-                         RgbaColor box_border,
-                         RgbaColor text_color,
-                         std::string_view msg,
-                         ScriptPreference pref,
-                         int font_px) const;
+    void draw_text_centered(const RenderSurface& surface,
+                            int center_x,
+                            int baseline_y,
+                            int pixel_size,
+                            std::string_view text,
+                            ScriptPreference pref,
+                            RgbaColor color,
+                            int max_width) const;
+    std::vector<std::string> wrap_text(std::string_view text,
+                                       int pixel_size,
+                                       ScriptPreference pref,
+                                       int max_width) const;
+    void draw_status_icon(const RenderSurface& surface,
+                          int cx,
+                          int cy,
+                          int diameter,
+                          char symbol,
+                          RgbaColor color,
+                          RgbaColor symbol_color) const;
+    void draw_key_glyph(const RenderSurface& surface, int cx, int cy, int diameter, char key, const ThemePalette& pal) const;
+    void draw_hint(const RenderSurface& surface,
+                   const Rect& rect,
+                   char key,
+                   std::string_view label,
+                   ScriptPreference pref,
+                   const ThemePalette& pal) const;
+    void draw_language_line(const RenderSurface& surface,
+                            int center_x,
+                            int baseline_y,
+                            int max_width,
+                            ScriptPreference ui_pref,
+                            const std::string& label,
+                            const LanguageEntry& entry,
+                            const ThemePalette& pal) const;
+    void draw_dialog_content(const RenderSurface& surface,
+                             const Rect& area,
+                             const std::vector<DialogItem>& items,
+                             ScriptPreference ui_pref,
+                             const ThemePalette& pal,
+                             RgbaColor surface_color) const;
+    void draw_dialog_frame(const RenderSurface& surface, const Rect& box, const ThemePalette& pal) const;
+    void draw_dialog_button(const RenderSurface& surface,
+                            const Rect& rect,
+                            std::string_view label,
+                            bool focused,
+                            ScriptPreference pref,
+                            const ThemePalette& pal) const;
 
-    void render_header(const RenderSurface& surface, const PickerView& view, ScriptPreference ui_pref) const;
+    void render_header(const RenderSurface& surface, const PickerView& view) const;
+    void render_sidebar(const RenderSurface& surface, const PickerView& view, ScriptPreference ui_pref) const;
     void render_error_screen(const RenderSurface& surface, const PickerView& view, ScriptPreference ui_pref) const;
     void render_list_view(const RenderSurface& surface, const PickerView& view, ScriptPreference ui_pref) const;
     void render_footer(const RenderSurface& surface, const PickerView& view, ScriptPreference ui_pref) const;

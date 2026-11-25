@@ -20,36 +20,39 @@ PickerLayout compute_picker_layout(std::uint32_t width,
 
     const auto sc = [h](int v) { return scale_px(v, static_cast<std::uint32_t>(h)); };
 
-    const int margin_x = std::max(sc(96), w / 16);
-    const int content_w = std::max(sc(320), w - 2 * margin_x);
-
-    layout.header = {0, 0, w, sc(128)};
-    layout.banner = {margin_x, sc(142), content_w, sc(50)};
-    layout.section_header = {margin_x, sc(202), content_w, sc(32)};
-
-    const int footer_h = sc(96);
+    // Horizon proportions authored at 1080p: 132 px header, 108 px footer, ~1/3 width sidebar.
+    layout.header = {0, 0, w, sc(132)};
+    const int footer_h = sc(108);
     layout.footer = {0, h - footer_h, w, footer_h};
 
-    const int list_y = sc(242);
-    const int list_bottom = layout.footer.y - sc(24);
-    const int list_h = std::max(sc(80), list_bottom - list_y);
+    const int body_y = layout.header.h;
+    const int sidebar_w = std::max(sc(420), (w * 32) / 100);
+    layout.sidebar = {0, body_y, sidebar_w, layout.footer.y - body_y};
 
-    const int row_h = sc(68);
-    const int row_gap = sc(8);
-    const int pitch = row_h + row_gap;
-    layout.row_pitch = pitch;
+    const int side_x = sc(80);
+    const int side_w = std::max(sc(200), sidebar_w - side_x - sc(40));
+    layout.sidebar_tab = {side_x, body_y + sc(36), side_w, sc(84)};
+    const int banner_y = layout.sidebar_tab.y + layout.sidebar_tab.h + sc(320);
+    layout.banner = {side_x, banner_y, side_w, std::max(sc(60), layout.footer.y - sc(30) - banner_y)};
+
+    const int content_x = sidebar_w + sc(60);
+    const int content_right = w - sc(96);
+    const int content_w = std::max(sc(320), content_right - content_x);
+
+    layout.section_header = {content_x, body_y + sc(28), content_w, sc(48)};
+
+    const int list_y = body_y + sc(84);
+    const int list_bottom = layout.footer.y - sc(24);
+    const int list_h = std::max(sc(90), list_bottom - list_y);
+
+    const int row_h = sc(90);
+    layout.row_pitch = row_h;
     layout.tap_slop = sc(24);
 
-    const int scrollbar_w = sc(10);
-    const int scrollbar_gap = sc(16);
-    const int row_w = std::max(sc(240), content_w - scrollbar_w - scrollbar_gap);
+    layout.list_area = {content_x, list_y, content_w, list_h};
+    layout.scrollbar_track = {content_x + content_w + sc(36), list_y, sc(6), list_h};
 
-    layout.list_area = {margin_x, list_y, row_w, list_h};
-    layout.scrollbar_track = {margin_x + row_w + scrollbar_gap, list_y, scrollbar_w, list_h};
-
-    layout.visible_rows = std::max<std::size_t>(
-        1,
-        static_cast<std::size_t>((list_h + row_gap) / pitch));
+    layout.visible_rows = std::max<std::size_t>(1, static_cast<std::size_t>(list_h / row_h));
 
     const std::size_t max_scroll =
         total_rows > layout.visible_rows ? (total_rows - layout.visible_rows) : 0;
@@ -62,49 +65,31 @@ PickerLayout compute_picker_layout(std::uint32_t width,
 
     layout.row_rects.reserve(rows_to_emit);
     for (std::size_t i = 0; i < rows_to_emit; ++i) {
-        layout.row_rects.push_back(Rect{
-            margin_x,
-            list_y + static_cast<int>(i) * pitch,
-            row_w,
-            row_h,
-        });
+        layout.row_rects.push_back(Rect{content_x, list_y + static_cast<int>(i) * row_h, content_w, row_h});
     }
 
-    const int btn_h = sc(64);
+    const int btn_h = sc(72);
     const int btn_y = layout.footer.y + (footer_h - btn_h) / 2;
-    const int exit_w = sc(210);
     const int select_w = sc(230);
-    const int btn_gap = sc(20);
-    layout.exit_button = {w - margin_x - exit_w, btn_y, exit_w, btn_h};
-    layout.select_button = {layout.exit_button.x - btn_gap - select_w, btn_y, select_w, btn_h};
+    const int exit_w = sc(190);
+    layout.exit_button = {w - sc(66) - exit_w, btn_y, exit_w, btn_h};
+    layout.select_button = {layout.exit_button.x - sc(12) - select_w, btn_y, select_w, btn_h};
 
-    const int dlg_w = std::min(content_w, sc(900));
-    const int dlg_h = sc(430);
+    const int dlg_w = std::min(w - 2 * sc(96), sc(1040));
+    const int dlg_btn_h = sc(108);
+
+    const int dlg_h = sc(440);
     const int dlg_x = (w - dlg_w) / 2;
     const int dlg_y = (h - dlg_h) / 2;
     layout.dialog_box = {dlg_x, dlg_y, dlg_w, dlg_h};
+    const int dlg_btn_y = dlg_y + dlg_h - dlg_btn_h;
+    layout.dialog_cancel_button = {dlg_x, dlg_btn_y, dlg_w / 2, dlg_btn_h};
+    layout.dialog_confirm_button = {dlg_x + dlg_w / 2, dlg_btn_y, dlg_w - dlg_w / 2, dlg_btn_h};
 
-    const int dlg_pad = sc(40);
-    const int dlg_btn_h = sc(76);
-    const int dlg_btn_gap = sc(24);
-    const int dlg_btn_w = (dlg_w - 2 * dlg_pad - dlg_btn_gap) / 2;
-    const int dlg_btn_y = dlg_y + dlg_h - dlg_pad - dlg_btn_h;
-    layout.dialog_cancel_button = {dlg_x + dlg_pad, dlg_btn_y, dlg_btn_w, dlg_btn_h};
-    layout.dialog_confirm_button = {dlg_x + dlg_pad + dlg_btn_w + dlg_btn_gap, dlg_btn_y, dlg_btn_w, dlg_btn_h};
-
-    const int res_w = std::min(content_w, sc(1020));
-    const int res_h = sc(470);
-    const int res_x = (w - res_w) / 2;
+    const int res_h = sc(540);
     const int res_y = (h - res_h) / 2;
-    layout.result_box = {res_x, res_y, res_w, res_h};
-    const int res_btn_w = std::min(res_w - 2 * sc(40), sc(420));
-    const int res_btn_h = sc(76);
-    layout.result_continue_button = {
-        res_x + (res_w - res_btn_w) / 2,
-        res_y + res_h - sc(36) - res_btn_h,
-        res_btn_w,
-        res_btn_h,
-    };
+    layout.result_box = {dlg_x, res_y, dlg_w, res_h};
+    layout.result_continue_button = {dlg_x, res_y + res_h - dlg_btn_h, dlg_w, dlg_btn_h};
 
     return layout;
 }

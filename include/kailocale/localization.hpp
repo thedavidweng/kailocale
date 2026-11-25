@@ -15,10 +15,9 @@ enum class UiLanguage {
 struct LocalizedStrings {
     UiLanguage ui_language = UiLanguage::En;
     std::string subtitle;
-    std::string mode_pill;
+    std::string apply_note;
     std::string current_label;
     std::string supported_header;
-    std::string applied_badge;
     std::string unsupported_active_warning;
     std::string already_active_notice;
     std::string confirm_title;
@@ -45,11 +44,7 @@ struct LocalizedStrings {
     std::string service_error_detail;
     std::string stage_label;
     std::string result_label;
-    std::string hint_navigate;
     std::string hint_select;
-    std::string hint_confirm;
-    std::string hint_cancel;
-    std::string hint_continue;
     std::string hint_exit;
 };
 

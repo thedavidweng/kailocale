@@ -22,6 +22,8 @@ struct PickerLayout {
     std::uint32_t viewport_width = 1920;
     std::uint32_t viewport_height = 1080;
     Rect header{};
+    Rect sidebar{};
+    Rect sidebar_tab{};
     Rect banner{};
     Rect section_header{};
     Rect list_area{};
