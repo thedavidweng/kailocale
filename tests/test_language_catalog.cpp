@@ -115,6 +115,24 @@ void test_known_horizon_autonyms_and_regional_differentiation() {
     CHECK(!unknown.known);
     CHECK(unknown.tag == "sv");
     CHECK(unknown.native_name == "sv");
+
+    const kailocale::LanguageEntry known_entry =
+        kailocale::make_language_entry(pack_language_code("en-US"), true, true);
+    CHECK(known_entry.code == pack_language_code("en-US"));
+    CHECK(known_entry.tag == "en-US");
+    CHECK(known_entry.native_name == "English (US)");
+    CHECK(known_entry.known);
+    CHECK(known_entry.system_supported);
+    CHECK(known_entry.is_active);
+
+    const kailocale::LanguageEntry invalid_entry =
+        kailocale::make_language_entry(0x0001020304050607ULL, false, false);
+    CHECK(invalid_entry.code == 0x0001020304050607ULL);
+    CHECK(invalid_entry.tag == "0x0001020304050607");
+    CHECK(invalid_entry.native_name == "0x0001020304050607");
+    CHECK(!invalid_entry.known);
+    CHECK(!invalid_entry.system_supported);
+    CHECK(!invalid_entry.is_active);
 }
 
 void test_catalog_deduplicates_filters_invalid_and_marks_active() {

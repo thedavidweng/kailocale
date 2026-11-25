@@ -294,6 +294,40 @@ void test_display_init_failure_skips_render_and_unwinds_exit_lock() {
     CHECK(fake.events == expected_events);
 }
 
+void test_input_init_failure_renders_error_and_unwinds_cleanly_on_applet_exit() {
+    FakePlatformServices fake;
+    FakeLanguageService lang;
+    fake.input_result = ServiceResult::failure(0x5101);
+    InputSnapshot idle;
+    InputSnapshot stop;
+    stop.applet_running = false;
+    fake.frames = {idle, stop};
+
+    kailocale::AppShell shell(fake, lang);
+    const ShellOutcome outcome = shell.run();
+
+    CHECK(outcome.reason == kailocale::ExitReason::InitFailed);
+    CHECK(!outcome.succeeded());
+    CHECK(outcome.failed_stage == "input");
+    CHECK(outcome.error_code == 0x5101u);
+
+    CHECK(fake.rendered_status.size() == 1);
+    CHECK(fake.rendered_status[0].kind == ShellScreenKind::InitError);
+    CHECK(fake.rendered_status[0].stage == "input");
+    CHECK(fake.rendered_status[0].error_code == 0x5101u);
+    CHECK(fake.rendered_picker.empty());
+    CHECK(fake.poll_count == 2);
+
+    const std::vector<std::string> expected_events = {
+        "init:exit_lock",
+        "init:display",
+        "init:input",
+        "exit:display",
+        "exit:exit_lock",
+    };
+    CHECK(fake.events == expected_events);
+}
+
 void test_applet_exit_request_closes_cleanly() {
     FakePlatformServices fake;
     FakeLanguageService lang;
@@ -496,6 +530,7 @@ int main() {
         {"setsys_init_failure_renders_visible_error_and_tears_down_acquired_subset", test_setsys_init_failure_renders_visible_error_and_tears_down_acquired_subset},
         {"resolution_change_resizes_and_rerenders_picker_only_when_dirty", test_resolution_change_resizes_and_rerenders_picker_only_when_dirty},
         {"display_init_failure_skips_render_and_unwinds_exit_lock", test_display_init_failure_skips_render_and_unwinds_exit_lock},
+        {"input_init_failure_renders_error_and_unwinds_cleanly_on_applet_exit", test_input_init_failure_renders_error_and_unwinds_cleanly_on_applet_exit},
         {"applet_exit_request_closes_cleanly", test_applet_exit_request_closes_cleanly},
         {"shared_font_init_failure_still_renders_visible_error_and_exits_on_applet_close", test_shared_font_init_failure_still_renders_visible_error_and_exits_on_applet_close},
         {"navigation_dialog_and_service_error_picker_flow_through_app_shell", test_navigation_dialog_and_service_error_picker_flow_through_app_shell},

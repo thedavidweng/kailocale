@@ -1,29 +1,14 @@
 #include "kailocale/language_picker.hpp"
 
 #include <algorithm>
-#include <cstdio>
 #include <cstdlib>
 
 namespace kailocale {
 
 namespace {
 
-LanguageEntry make_display_entry(LanguageCode code, bool system_supported, bool is_active) {
-    LanguageMetadata meta = describe_language(code);
-    if (meta.tag.empty()) {
-        char buf[24] = {};
-        std::snprintf(buf, sizeof(buf), "0x%016llX", static_cast<unsigned long long>(code));
-        meta.tag = buf;
-        meta.native_name = buf;
-    }
-    return LanguageEntry{
-        code,
-        meta.tag,
-        meta.native_name,
-        meta.known,
-        system_supported,
-        is_active,
-    };
+bool is_supported_target(const LanguageEntry& entry) {
+    return entry.system_supported && entry.code != 0 && !format_language_tag(entry.code).empty();
 }
 
 } // namespace
@@ -122,7 +107,7 @@ bool LanguagePicker::open_dialog_for_focused() {
         return false;
     }
     const LanguageEntry& focused = view_.entries[view_.focused_index];
-    if (!focused.system_supported || focused.code == 0 || format_language_tag(focused.code).empty()) {
+    if (!is_supported_target(focused)) {
         return false;
     }
     if (focused.code == view_.applied_code) {
@@ -143,8 +128,7 @@ bool LanguagePicker::begin_apply_for_dialog_target() {
         return false;
     }
     const LanguageEntry& target = view_.entries[view_.dialog_target_index];
-    if (!target.system_supported || target.code == 0 ||
-        format_language_tag(target.code).empty() || target.code == view_.applied_code) {
+    if (!is_supported_target(target) || target.code == view_.applied_code) {
         cancel_dialog();
         return false;
     }
@@ -165,7 +149,7 @@ void LanguagePicker::apply_active_language_state(LanguageCode code) {
     }
     view_.active_missing_from_supported = !in_supported;
 
-    view_.active_entry = make_display_entry(code, in_supported, true);
+    view_.active_entry = make_language_entry(code, in_supported, true);
 
     const UiLanguage ui_lang = ui_language_from_code(code);
     view_.strings = localized_strings(ui_lang);
@@ -181,8 +165,7 @@ void LanguagePicker::apply_active_language_state(LanguageCode code) {
 
 void LanguagePicker::execute_pending_apply() {
     const LanguageEntry target = view_.apply_report.target_entry;
-    if (!target.system_supported || target.code == 0 ||
-        format_language_tag(target.code).empty() || target.code == view_.applied_code) {
+    if (!is_supported_target(target) || target.code == view_.applied_code) {
         cancel_dialog();
         return;
     }
@@ -191,7 +174,6 @@ void LanguagePicker::execute_pending_apply() {
     if (!write_res.ok) {
         view_.apply_report.outcome = ApplyOutcome::Rejected;
         view_.apply_report.error_code = write_res.code;
-        view_.apply_report.actual_code = view_.applied_code;
         view_.apply_report.actual_entry = view_.active_entry;
         view_.screen = PickerScreen::Result;
         return;
@@ -201,7 +183,6 @@ void LanguagePicker::execute_pending_apply() {
     if (!readback.status.ok) {
         view_.apply_report.outcome = ApplyOutcome::ReadbackFailed;
         view_.apply_report.error_code = readback.status.code;
-        view_.apply_report.actual_code = 0;
         view_.apply_report.actual_entry = LanguageEntry{};
         view_.screen = PickerScreen::Result;
         return;
@@ -210,7 +191,6 @@ void LanguagePicker::execute_pending_apply() {
     if (readback.code == target.code) {
         apply_active_language_state(readback.code);
         view_.apply_report.outcome = ApplyOutcome::Verified;
-        view_.apply_report.actual_code = readback.code;
         view_.apply_report.actual_entry = view_.active_entry;
         view_.apply_report.error_code = 0;
         view_.screen = PickerScreen::Result;
@@ -220,12 +200,11 @@ void LanguagePicker::execute_pending_apply() {
 
     // ReadbackMismatch: update applied state if readback.code != 0, and always report expected vs actual.
     view_.apply_report.outcome = ApplyOutcome::ReadbackMismatch;
-    view_.apply_report.actual_code = readback.code;
     if (readback.code != 0) {
         apply_active_language_state(readback.code);
         view_.apply_report.actual_entry = view_.active_entry;
     } else {
-        view_.apply_report.actual_entry = make_display_entry(0ULL, false, false);
+        view_.apply_report.actual_entry = make_language_entry(0ULL, false, false);
     }
     view_.apply_report.error_code = 0;
     view_.screen = PickerScreen::Result;
@@ -238,10 +217,7 @@ void LanguagePicker::dismiss_result(const PickerInput& input) {
     }
     view_.screen = PickerScreen::List;
     ensure_focused_visible();
-    latch_held_buttons(input);
-    touch_in_progress_ = false;
-    touch_is_tap_ = false;
-    touch_suppressed_ = input.touch.active;
+    reset_inputs_on_transition(input);
 }
 
 void LanguagePicker::cancel_dialog() {
@@ -250,7 +226,10 @@ void LanguagePicker::cancel_dialog() {
     ensure_focused_visible();
 }
 
-void LanguagePicker::latch_held_buttons(const PickerInput& input) {
+void LanguagePicker::reset_inputs_on_transition(const PickerInput& input) {
+    prev_a_held_ = input.a_held;
+    prev_b_held_ = input.b_held;
+    prev_plus_held_ = input.plus_held;
     if (input.a_held) {
         latch_a_ = true;
     }
@@ -265,6 +244,9 @@ void LanguagePicker::latch_held_buttons(const PickerInput& input) {
     }
     nav_dir_ = 0;
     nav_timer_ = 0;
+    touch_in_progress_ = false;
+    touch_is_tap_ = false;
+    touch_suppressed_ = input.touch.active;
 }
 
 PickerStepResult LanguagePicker::step(const PickerInput& input) {
@@ -298,28 +280,14 @@ PickerStepResult LanguagePicker::step(const PickerInput& input) {
     }
 
     if (view_.screen == PickerScreen::Applying) {
-        prev_a_held_ = input.a_held;
-        prev_b_held_ = input.b_held;
-        prev_plus_held_ = input.plus_held;
-        latch_held_buttons(input);
-        touch_in_progress_ = false;
-        touch_is_tap_ = false;
-        touch_suppressed_ = input.touch.active;
+        reset_inputs_on_transition(input);
         execute_pending_apply();
         out.dirty = true;
         return out;
     }
 
     if (input.boundary_reset) {
-        latch_held_buttons(input);
-        if (touch_in_progress_ || input.touch.active) {
-            touch_in_progress_ = false;
-            touch_is_tap_ = false;
-            touch_suppressed_ = input.touch.active;
-        }
-        prev_a_held_ = input.a_held;
-        prev_b_held_ = input.b_held;
-        prev_plus_held_ = input.plus_held;
+        reset_inputs_on_transition(input);
         return out;
     }
 
@@ -381,16 +349,13 @@ PickerStepResult LanguagePicker::step(const PickerInput& input) {
     if (view_.screen == PickerScreen::ConfirmDialog) {
         if (a_down) {
             begin_apply_for_dialog_target();
-            latch_held_buttons(input);
-            touch_in_progress_ = false;
-            touch_is_tap_ = false;
-            touch_suppressed_ = input.touch.active;
+            reset_inputs_on_transition(input);
             out.dirty = true;
             return out;
         }
         if (b_down) {
             cancel_dialog();
-            latch_held_buttons(input);
+            reset_inputs_on_transition(input);
             out.dirty = true;
             return out;
         }
@@ -399,7 +364,7 @@ PickerStepResult LanguagePicker::step(const PickerInput& input) {
             if (open_dialog_for_focused()) {
                 out.dirty = true;
             }
-            latch_held_buttons(input);
+            reset_inputs_on_transition(input);
             return out;
         }
     }
@@ -427,7 +392,7 @@ PickerStepResult LanguagePicker::step(const PickerInput& input) {
                 } else if (view_.screen == PickerScreen::ConfirmDialog) {
                     if (view_.layout.dialog_confirm_button.contains(tap_x, tap_y)) {
                         begin_apply_for_dialog_target();
-                        latch_held_buttons(input);
+                        reset_inputs_on_transition(input);
                         out.dirty = true;
                     } else if (view_.layout.dialog_cancel_button.contains(tap_x, tap_y) ||
                                !view_.layout.dialog_box.contains(tap_x, tap_y)) {

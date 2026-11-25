@@ -55,6 +55,9 @@ std::string format_language_tag(LanguageCode code);
 /// Maps a packed u64 BCP-47 tag to its native autonym and metadata without SetLanguage index assumptions.
 LanguageMetadata describe_language(LanguageCode code);
 
+/// Builds a display-ready LanguageEntry for code, using a canonical 0x... fallback tag if invalid/zero.
+LanguageEntry make_language_entry(LanguageCode code, bool system_supported, bool is_active);
+
 /// Discovers active and runtime-supported languages via LanguageService without modifying system settings.
 CatalogBuildResult build_language_catalog(LanguageService& service);
 

@@ -8,12 +8,11 @@ namespace kailocale {
 struct PickerView;
 
 enum class ShellScreenKind {
-    Ready,
     InitError,
 };
 
 struct ShellView {
-    ShellScreenKind kind = ShellScreenKind::Ready;
+    ShellScreenKind kind = ShellScreenKind::InitError;
     const char* app_name = "KaiLocale";
     const char* app_version = "0.1.0";
     std::string stage;

@@ -41,6 +41,9 @@ struct PickerLayout {
     std::vector<Rect> row_rects;
 };
 
+/// Scales a 1080p-authored pixel value proportionally for the active viewport height (clamped >= 1).
+int scale_px(int px, std::uint32_t viewport_height);
+
 /// Computes responsive Horizon-style layout geometry and touch hit targets for any Switch 2 viewport.
 PickerLayout compute_picker_layout(std::uint32_t width,
                                    std::uint32_t height,

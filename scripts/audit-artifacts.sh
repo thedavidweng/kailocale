@@ -36,6 +36,35 @@ echo "[audit] Checking single build configuration & provenance manifest..."
 test ! -f "CMakeLists.txt" || { echo "FAIL: competing CMakeLists.txt present" >&2; exit 1; }
 python3 -c 'import json; d = json.load(open("UPSTREAM.json")); assert d["sdk_packages"]["libounce"]["version"] == "20261123-1"'
 
+echo "[audit] Checking LICENSE, LICENSES/, and THIRD_PARTY_NOTICES.md references..."
+python3 - << 'PY'
+import os
+import re
+
+assert os.path.isfile("LICENSE") and os.path.getsize("LICENSE") > 0, "Missing or empty LICENSE"
+assert os.path.isfile("THIRD_PARTY_NOTICES.md") and os.path.getsize("THIRD_PARTY_NOTICES.md") > 0, \
+    "Missing or empty THIRD_PARTY_NOTICES.md"
+
+with open("THIRD_PARTY_NOTICES.md", "r", encoding="utf-8") as f:
+    notices = f.read()
+
+refs = sorted(set(re.findall(r"(?:LICENSES|assets)/[A-Za-z0-9_.\-/]+", notices)))
+license_refs = [r for r in refs if r.startswith("LICENSES/")]
+assert license_refs, "THIRD_PARTY_NOTICES.md contains no LICENSES/ references"
+
+for path in refs:
+    assert os.path.isfile(path) and os.path.getsize(path) > 0, \
+        f"Referenced notice file missing or empty: {path}"
+
+bundled_licenses = sorted(
+    f"LICENSES/{name}" for name in os.listdir("LICENSES")
+    if os.path.isfile(os.path.join("LICENSES", name))
+)
+assert bundled_licenses == sorted(license_refs), (
+    f"Mismatch between LICENSES/ files {bundled_licenses} and referenced {sorted(license_refs)}"
+)
+PY
+
 echo "[audit] Checking repo/dist for proprietary Nintendo font or asset files..."
 PROPRIETARY_FILES="$(find . -maxdepth 5 -not -path './.git/*' \( -iname '*.bfttf' -o -iname 'switch_font*.ttf' -o -iname 'keymap_*.ttf' \))"
 if [ -n "$PROPRIETARY_FILES" ]; then
