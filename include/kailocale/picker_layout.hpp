@@ -32,6 +32,8 @@ struct PickerLayout {
     Rect dialog_box{};
     Rect dialog_confirm_button{};
     Rect dialog_cancel_button{};
+    Rect result_box{};
+    Rect result_continue_button{};
     int row_pitch = 0;
     int tap_slop = 24;
     std::size_t visible_rows = 0;

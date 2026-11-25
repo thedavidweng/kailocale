@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "kailocale/language_catalog.hpp"
 #include "NotoSans-Regular_ttf.h"
 #include "NotoSansThai-Regular_ttf.h"
 
@@ -64,6 +65,18 @@ SystemTheme Switch2LanguageService::read_system_theme() {
         return SystemTheme::Light;
     }
     return SystemTheme::Dark;
+}
+
+ServiceResult Switch2LanguageService::apply_language(LanguageCode code) {
+    if (code == 0 || format_language_tag(code).empty()) {
+        return ServiceResult::failure(static_cast<std::uint32_t>(
+            MAKERESULT(Module_Libnx, LibnxError_BadInput)));
+    }
+    const Result rc = setsysSetLanguageCode(static_cast<u64>(code));
+    if (R_FAILED(rc)) {
+        return ServiceResult::failure(static_cast<std::uint32_t>(rc));
+    }
+    return ServiceResult::success();
 }
 
 void Switch2PlatformServices::on_applet_hook(AppletHookType hook, void* param) {

@@ -17,7 +17,25 @@ namespace kailocale {
 enum class PickerScreen {
     List,
     ConfirmDialog,
+    Applying,
+    Result,
     Error,
+};
+
+enum class ApplyOutcome {
+    None,
+    Verified,
+    Rejected,
+    ReadbackMismatch,
+    ReadbackFailed,
+};
+
+struct ApplyReport {
+    ApplyOutcome outcome = ApplyOutcome::None;
+    LanguageEntry target_entry{};
+    LanguageEntry actual_entry{};
+    LanguageCode actual_code = 0;
+    std::uint32_t error_code = 0;
 };
 
 enum class BannerKind {
@@ -57,6 +75,7 @@ struct PickerView {
     std::string banner_text;
     std::string error_stage;
     std::uint32_t error_code = 0;
+    ApplyReport apply_report{};
     PickerLayout layout{};
 };
 
@@ -65,7 +84,7 @@ struct PickerStepResult {
     bool dirty = false;
 };
 
-/// Controller-first and touch-capable read-only language picker state machine.
+/// Controller-first and touch-capable language picker state machine with confirmed apply and readback verification.
 class LanguagePicker {
 public:
     explicit LanguagePicker(LanguageService& service,
@@ -84,10 +103,14 @@ private:
     void clear_transient_banner();
     void move_focus(int delta);
     bool open_dialog_for_focused();
-    void confirm_readonly_preview();
+    bool begin_apply_for_dialog_target();
+    void execute_pending_apply();
+    void apply_active_language_state(LanguageCode code);
+    void dismiss_result(const PickerInput& input);
     void cancel_dialog();
     void latch_held_buttons(const PickerInput& input);
 
+    LanguageService& service_;
     PickerView view_{};
 
     bool prev_a_held_ = false;

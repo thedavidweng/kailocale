@@ -40,6 +40,10 @@ public:
     SystemTheme read_system_theme() override {
         return theme;
     }
+
+    ServiceResult apply_language(LanguageCode) override {
+        return ServiceResult::success();
+    }
 };
 
 #define CHECK(cond)                                                              \

@@ -96,6 +96,20 @@ PickerLayout compute_picker_layout(std::uint32_t width,
     layout.dialog_cancel_button = {dlg_x + dlg_pad, dlg_btn_y, dlg_btn_w, dlg_btn_h};
     layout.dialog_confirm_button = {dlg_x + dlg_pad + dlg_btn_w + dlg_btn_gap, dlg_btn_y, dlg_btn_w, dlg_btn_h};
 
+    const int res_w = std::min(content_w, sc(1020));
+    const int res_h = sc(470);
+    const int res_x = (w - res_w) / 2;
+    const int res_y = (h - res_h) / 2;
+    layout.result_box = {res_x, res_y, res_w, res_h};
+    const int res_btn_w = std::min(res_w - 2 * sc(40), sc(420));
+    const int res_btn_h = sc(76);
+    layout.result_continue_button = {
+        res_x + (res_w - res_btn_w) / 2,
+        res_y + res_h - sc(36) - res_btn_h,
+        res_btn_w,
+        res_btn_h,
+    };
+
     return layout;
 }
 

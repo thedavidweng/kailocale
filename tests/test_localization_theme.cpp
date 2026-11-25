@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <iostream>
 #include <sstream>
@@ -50,23 +52,73 @@ void test_ui_language_selection_and_english_fallback() {
     CHECK(ui_language_from_code(0ULL) == UiLanguage::En);
 }
 
+std::string ascii_lower(std::string s) {
+    for (char& ch : s) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return s;
+}
+
 void test_localized_strings_cover_en_sc_tc_distinctly() {
     const LocalizedStrings& en = localized_strings(UiLanguage::En);
     const LocalizedStrings& sc = localized_strings(UiLanguage::ZhHans);
     const LocalizedStrings& tc = localized_strings(UiLanguage::ZhHant);
 
     CHECK(!en.subtitle.empty());
+    CHECK(!en.mode_pill.empty());
     CHECK(!en.current_label.empty());
     CHECK(!en.applied_badge.empty());
     CHECK(!en.confirm_title.empty());
-    CHECK(!en.readonly_notice.empty());
+    CHECK(!en.confirm_notice.empty());
+    CHECK(!en.applying_title.empty());
+    CHECK(!en.applying_detail.empty());
+    CHECK(!en.result_verified_title.empty());
+    CHECK(!en.result_rejected_title.empty());
+    CHECK(!en.result_rejected_detail.empty());
+    CHECK(!en.result_mismatch_title.empty());
+    CHECK(!en.result_mismatch_detail.empty());
+    CHECK(!en.result_expected_label.empty());
+    CHECK(!en.result_actual_label.empty());
+    CHECK(!en.result_readback_failed_title.empty());
+    CHECK(!en.result_readback_failed_detail.empty());
+    CHECK(!en.result_reopen_apps_note.empty());
+    CHECK(!en.result_reboot_note.empty());
+    CHECK(!en.result_continue_button.empty());
+    CHECK(!en.hint_continue.empty());
     CHECK(!en.service_error_title.empty());
     CHECK(!en.hint_exit.empty());
+
+    // Ensure Ticket #3 read-only preview placeholders are gone across all UI languages.
+    CHECK(ascii_lower(en.mode_pill).find("read-only") == std::string::npos);
+    CHECK(ascii_lower(en.mode_pill).find("preview") == std::string::npos);
+    CHECK(ascii_lower(en.confirm_notice).find("read-only") == std::string::npos);
+    CHECK(ascii_lower(en.confirm_notice).find("preview") == std::string::npos);
+    CHECK(ascii_lower(en.confirm_button).find("preview") == std::string::npos);
+    CHECK(sc.mode_pill.find("\xE5\x8F\xAA\xE8\xAF\xBB") == std::string::npos);
+    CHECK(sc.mode_pill.find("\xE9\xA2\x84\xE8\xA7\x88") == std::string::npos);
+    CHECK(tc.mode_pill.find("\xE5\x94\xAF\xE8\xAE\x80") == std::string::npos);
+    CHECK(tc.mode_pill.find("\xE9\xA0\x90\xE8\xA6\xBD") == std::string::npos);
+
+    // Ensure reopen guidance is present and no reboot persistence promise is made.
+    CHECK(ascii_lower(en.result_reopen_apps_note).find("reopen") != std::string::npos);
+    CHECK(ascii_lower(en.result_reboot_note).find("not promised") != std::string::npos ||
+          ascii_lower(en.result_reboot_note).find("not guaranteed") != std::string::npos);
 
     CHECK(sc.subtitle != en.subtitle);
     CHECK(tc.subtitle != en.subtitle);
     CHECK(sc.subtitle != tc.subtitle);
+    CHECK(sc.mode_pill != en.mode_pill);
+    CHECK(tc.mode_pill != en.mode_pill);
+    CHECK(sc.mode_pill != tc.mode_pill);
     CHECK(sc.confirm_title != tc.confirm_title);
+    CHECK(sc.applying_title != tc.applying_title);
+    CHECK(sc.result_verified_title != tc.result_verified_title);
+    CHECK(sc.result_rejected_title != tc.result_rejected_title);
+    CHECK(sc.result_mismatch_title != tc.result_mismatch_title);
+    CHECK(sc.result_readback_failed_title != tc.result_readback_failed_title);
+    CHECK(sc.result_reopen_apps_note != tc.result_reopen_apps_note);
+    CHECK(sc.result_reboot_note != tc.result_reboot_note);
+    CHECK(sc.result_continue_button != tc.result_continue_button);
     CHECK(sc.applied_badge != en.applied_badge);
     CHECK(tc.applied_badge != en.applied_badge);
 }
