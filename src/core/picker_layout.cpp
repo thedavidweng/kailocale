@@ -70,8 +70,8 @@ PickerLayout compute_picker_layout(std::uint32_t width,
 
     const int btn_h = sc(72);
     const int btn_y = layout.footer.y + (footer_h - btn_h) / 2;
-    const int select_w = sc(230);
-    const int exit_w = sc(190);
+    const int select_w = sc(280);
+    const int exit_w = sc(240);
     layout.exit_button = {w - sc(66) - exit_w, btn_y, exit_w, btn_h};
     layout.select_button = {layout.exit_button.x - sc(12) - select_w, btn_y, select_w, btn_h};
 

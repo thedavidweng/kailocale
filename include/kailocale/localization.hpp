@@ -10,6 +10,17 @@ enum class UiLanguage {
     En = 0,
     ZhHans = 1,
     ZhHant = 2,
+    Ja = 3,
+    Ko = 4,
+    Fr = 5,
+    De = 6,
+    It = 7,
+    Es = 8,
+    Nl = 9,
+    Pt = 10,
+    Ru = 11,
+    Pl = 12,
+    Th = 13,
 };
 
 struct LocalizedStrings {
@@ -48,7 +59,7 @@ struct LocalizedStrings {
     std::string hint_exit;
 };
 
-/// Selects English, Simplified Chinese, or Traditional Chinese UI strings with English fallback.
+/// Selects the localized UI string set matching the console language code, falling back to English.
 UiLanguage ui_language_from_code(LanguageCode code);
 
 /// Returns immutable UI strings for the given interface language.

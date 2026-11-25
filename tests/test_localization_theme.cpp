@@ -44,10 +44,23 @@ void test_ui_language_selection_and_english_fallback() {
     CHECK(ui_language_from_code(pack_language_code("zh-CN")) == UiLanguage::ZhHans);
     CHECK(ui_language_from_code(pack_language_code("zh-Hant")) == UiLanguage::ZhHant);
     CHECK(ui_language_from_code(pack_language_code("zh-TW")) == UiLanguage::ZhHant);
+    CHECK(ui_language_from_code(pack_language_code("ja")) == UiLanguage::Ja);
+    CHECK(ui_language_from_code(pack_language_code("ko")) == UiLanguage::Ko);
+    CHECK(ui_language_from_code(pack_language_code("fr")) == UiLanguage::Fr);
+    CHECK(ui_language_from_code(pack_language_code("fr-CA")) == UiLanguage::Fr);
+    CHECK(ui_language_from_code(pack_language_code("de")) == UiLanguage::De);
+    CHECK(ui_language_from_code(pack_language_code("it")) == UiLanguage::It);
+    CHECK(ui_language_from_code(pack_language_code("es")) == UiLanguage::Es);
+    CHECK(ui_language_from_code(pack_language_code("es-419")) == UiLanguage::Es);
+    CHECK(ui_language_from_code(pack_language_code("nl")) == UiLanguage::Nl);
+    CHECK(ui_language_from_code(pack_language_code("pt")) == UiLanguage::Pt);
+    CHECK(ui_language_from_code(pack_language_code("pt-BR")) == UiLanguage::Pt);
+    CHECK(ui_language_from_code(pack_language_code("ru")) == UiLanguage::Ru);
+    CHECK(ui_language_from_code(pack_language_code("pl")) == UiLanguage::Pl);
+    CHECK(ui_language_from_code(pack_language_code("th")) == UiLanguage::Th);
 
     CHECK(ui_language_from_code(pack_language_code("en-US")) == UiLanguage::En);
-    CHECK(ui_language_from_code(pack_language_code("ja")) == UiLanguage::En);
-    CHECK(ui_language_from_code(pack_language_code("th")) == UiLanguage::En);
+    CHECK(ui_language_from_code(pack_language_code("en-GB")) == UiLanguage::En);
     CHECK(ui_language_from_code(pack_language_code("unknown")) == UiLanguage::En);
     CHECK(ui_language_from_code(0ULL) == UiLanguage::En);
 }
@@ -59,32 +72,72 @@ std::string ascii_lower(std::string s) {
     return s;
 }
 
-void test_localized_strings_cover_en_sc_tc_distinctly() {
+void test_localized_strings_cover_all_ui_languages_distinctly() {
+    const UiLanguage all_langs[] = {
+        UiLanguage::En,
+        UiLanguage::ZhHans,
+        UiLanguage::ZhHant,
+        UiLanguage::Ja,
+        UiLanguage::Ko,
+        UiLanguage::Fr,
+        UiLanguage::De,
+        UiLanguage::It,
+        UiLanguage::Es,
+        UiLanguage::Nl,
+        UiLanguage::Pt,
+        UiLanguage::Ru,
+        UiLanguage::Pl,
+        UiLanguage::Th,
+    };
+
+    for (UiLanguage lang : all_langs) {
+        const LocalizedStrings& s = localized_strings(lang);
+        CHECK(s.ui_language == lang);
+        CHECK(!s.subtitle.empty());
+        CHECK(!s.apply_note.empty());
+        CHECK(!s.current_label.empty());
+        CHECK(!s.supported_header.empty());
+        CHECK(!s.unsupported_active_warning.empty());
+        CHECK(!s.already_active_notice.empty());
+        CHECK(!s.confirm_title.empty());
+        CHECK(!s.confirm_current_label.empty());
+        CHECK(!s.confirm_target_label.empty());
+        CHECK(!s.confirm_notice.empty());
+        CHECK(!s.confirm_button.empty());
+        CHECK(!s.cancel_button.empty());
+        CHECK(!s.applying_title.empty());
+        CHECK(!s.applying_detail.empty());
+        CHECK(!s.result_verified_title.empty());
+        CHECK(!s.result_rejected_title.empty());
+        CHECK(!s.result_rejected_detail.empty());
+        CHECK(!s.result_mismatch_title.empty());
+        CHECK(!s.result_mismatch_detail.empty());
+        CHECK(!s.result_expected_label.empty());
+        CHECK(!s.result_actual_label.empty());
+        CHECK(!s.result_readback_failed_title.empty());
+        CHECK(!s.result_readback_failed_detail.empty());
+        CHECK(!s.result_reopen_apps_note.empty());
+        CHECK(!s.result_reboot_note.empty());
+        CHECK(!s.result_continue_button.empty());
+        CHECK(!s.service_error_title.empty());
+        CHECK(!s.service_error_detail.empty());
+        CHECK(!s.stage_label.empty());
+        CHECK(!s.result_label.empty());
+        CHECK(!s.hint_select.empty());
+        CHECK(!s.hint_exit.empty());
+        if (lang != UiLanguage::En) {
+            const LocalizedStrings& en = localized_strings(UiLanguage::En);
+            CHECK(s.apply_note != en.apply_note);
+            CHECK(s.confirm_title != en.confirm_title);
+            CHECK(s.result_verified_title != en.result_verified_title);
+            CHECK(s.result_reopen_apps_note != en.result_reopen_apps_note);
+            CHECK(s.result_reboot_note != en.result_reboot_note);
+        }
+    }
+
     const LocalizedStrings& en = localized_strings(UiLanguage::En);
     const LocalizedStrings& sc = localized_strings(UiLanguage::ZhHans);
     const LocalizedStrings& tc = localized_strings(UiLanguage::ZhHant);
-
-    CHECK(!en.subtitle.empty());
-    CHECK(!en.apply_note.empty());
-    CHECK(!en.current_label.empty());
-    CHECK(!en.confirm_title.empty());
-    CHECK(!en.confirm_notice.empty());
-    CHECK(!en.applying_title.empty());
-    CHECK(!en.applying_detail.empty());
-    CHECK(!en.result_verified_title.empty());
-    CHECK(!en.result_rejected_title.empty());
-    CHECK(!en.result_rejected_detail.empty());
-    CHECK(!en.result_mismatch_title.empty());
-    CHECK(!en.result_mismatch_detail.empty());
-    CHECK(!en.result_expected_label.empty());
-    CHECK(!en.result_actual_label.empty());
-    CHECK(!en.result_readback_failed_title.empty());
-    CHECK(!en.result_readback_failed_detail.empty());
-    CHECK(!en.result_reopen_apps_note.empty());
-    CHECK(!en.result_reboot_note.empty());
-    CHECK(!en.result_continue_button.empty());
-    CHECK(!en.service_error_title.empty());
-    CHECK(!en.hint_exit.empty());
 
     // Ensure Ticket #3 read-only preview placeholders are gone across all UI languages.
     CHECK(ascii_lower(en.apply_note).find("read-only") == std::string::npos);
@@ -102,11 +155,7 @@ void test_localized_strings_cover_en_sc_tc_distinctly() {
     CHECK(ascii_lower(en.result_reboot_note).find("not promised") != std::string::npos ||
           ascii_lower(en.result_reboot_note).find("not guaranteed") != std::string::npos);
 
-    CHECK(sc.subtitle != en.subtitle);
-    CHECK(tc.subtitle != en.subtitle);
     CHECK(sc.subtitle != tc.subtitle);
-    CHECK(sc.apply_note != en.apply_note);
-    CHECK(tc.apply_note != en.apply_note);
     CHECK(sc.apply_note != tc.apply_note);
     CHECK(sc.confirm_title != tc.confirm_title);
     CHECK(sc.applying_title != tc.applying_title);
@@ -146,7 +195,7 @@ int main() {
     };
     const TestCase cases[] = {
         {"ui_language_selection_and_english_fallback", test_ui_language_selection_and_english_fallback},
-        {"localized_strings_cover_en_sc_tc_distinctly", test_localized_strings_cover_en_sc_tc_distinctly},
+        {"localized_strings_cover_all_ui_languages_distinctly", test_localized_strings_cover_all_ui_languages_distinctly},
         {"light_and_dark_themes_maintain_contrast_and_distinct_indicators", test_light_and_dark_themes_maintain_contrast_and_distinct_indicators},
     };
 

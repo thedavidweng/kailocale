@@ -320,11 +320,25 @@ void draw_text_fallback(const RenderSurface& surface,
 
 ScriptPreference script_pref_for_ui(UiLanguage ui) {
     switch (ui) {
+    case UiLanguage::Ja:
+        return ScriptPreference::Japanese;
     case UiLanguage::ZhHans:
         return ScriptPreference::SimplifiedChinese;
     case UiLanguage::ZhHant:
         return ScriptPreference::TraditionalChinese;
+    case UiLanguage::Ko:
+        return ScriptPreference::Korean;
+    case UiLanguage::Th:
+        return ScriptPreference::Thai;
     case UiLanguage::En:
+    case UiLanguage::Fr:
+    case UiLanguage::De:
+    case UiLanguage::It:
+    case UiLanguage::Es:
+    case UiLanguage::Nl:
+    case UiLanguage::Pt:
+    case UiLanguage::Ru:
+    case UiLanguage::Pl:
     default:
         return ScriptPreference::Default;
     }
